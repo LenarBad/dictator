@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ru" style="background: transparent">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="icon" href="/icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Dictator</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body data-status="idle" style="background: transparent">
+    <main>
+      <header class="hero">
+        <img class="logo" src="/icon.png" width="40" height="40" alt="" />
+        <div class="hero-copy">
+          <h1>Dictator</h1>
+          <p class="lede">Офлайн-диктовка на русском</p>
+        </div>
+        <button type="button" id="toggle" class="record-btn" data-state="idle">
+          <span class="record-dot" aria-hidden="true"></span>
+          <span id="toggle-label">Записать</span>
+        </button>
+      </header>
+
+      <section class="status-card" aria-live="polite">
+        <span class="status-pip" aria-hidden="true"></span>
+        <div class="status-copy">
+          <p id="status-line">Загрузка…</p>
+          <p class="status-sub">
+            <span id="status-meta" class="muted"></span>
+            <span id="engine-line" class="engine">Модель: загрузка…</span>
+          </p>
+        </div>
+      </section>
+
+      <form id="settings-form">
+        <section>
+          <h2>Диктовка</h2>
+          <div class="group">
+            <div class="row">
+              <div class="row-copy">
+                <span class="row-title">Хоткей</span>
+                <span class="hint">Кликните и нажмите сочетание</span>
+              </div>
+              <button type="button" id="hotkey-display" class="hotkey" aria-label="Изменить хоткей">
+                —
+              </button>
+              <input id="hotkey" type="hidden" />
+            </div>
+            <div class="row">
+              <div class="row-copy">
+                <label class="row-title" for="paste_enabled">Авто-вставка</label>
+                <span class="hint">Иначе только копировать в буфер</span>
+              </div>
+              <label class="switch">
+                <input id="paste_enabled" type="checkbox" />
+                <span class="knob"></span>
+              </label>
+            </div>
+            <div class="row">
+              <label class="row-title" for="max_recording_seconds">Лимит записи</label>
+              <label class="stepper">
+                <input id="max_recording_seconds" type="number" min="5" step="1" />
+                <span>с</span>
+              </label>
+            </div>
+            <div class="row">
+              <div class="row-copy">
+                <label class="row-title" for="preload_model">Предзагрузка модели</label>
+                <span class="hint">GigaAM-v3, полностью локально</span>
+              </div>
+              <label class="switch">
+                <input id="preload_model" type="checkbox" />
+                <span class="knob"></span>
+              </label>
+            </div>
+            <div class="row mic">
+              <div class="row-copy">
+                <label class="row-title" for="microphone_name">Микрофон</label>
+                <span class="hint" id="mic-hint" hidden></span>
+              </div>
+              <select id="microphone_name"></select>
+            </div>
+          </div>
+        </section>
+
+        <p id="form-status" class="form-status" hidden></p>
+        <button type="submit" class="primary">Сохранить</button>
+      </form>
+
+      <section>
+        <h2>Разрешения</h2>
+        <div class="group">
+          <div class="row perm">
+            <span class="perm-dot" data-state="info" aria-hidden="true"></span>
+            <div class="row-copy">
+              <p class="row-title">Микрофон</p>
+              <p class="hint">Нужен, чтобы писать голос</p>
+            </div>
+            <button type="button" id="open-mic" class="ghost">Открыть</button>
+          </div>
+          <div class="row perm">
+            <span id="ax-dot" class="perm-dot" data-state="unknown" aria-hidden="true"></span>
+            <div class="row-copy">
+              <p class="row-title">Универсальный доступ</p>
+              <p id="ax-status" class="hint">Проверка…</p>
+            </div>
+            <button type="button" id="open-ax" class="ghost">Открыть</button>
+          </div>
+        </div>
+        <p class="footnote">В списке должен быть <strong>Dictator</strong>, не Terminal и не Cursor.</p>
+        <p id="settings-path" class="path"></p>
+      </section>
+    </main>
+  </body>
+</html>

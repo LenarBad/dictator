@@ -1,0 +1,22 @@
+{
+  "name": "dictator-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "fetch-model": "bash ../scripts/fetch-stt-model.sh",
+    "build:app": "bash ../scripts/build-macos-app.sh"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "typescript": "~5.8.3",
+    "vite": "^6.3.5"
+  }
+}

@@ -1,0 +1,26 @@
+.DS_Store
+.env
+.cursor/
+
+dist/
+build/
+*.app
+*.app.zip
+Dictator-macos-*.zip
+*.dmg
+*.msi
+*.exe
+*.AppImage
+*.deb
+*.rpm
+
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/resources/gigaam/*.onnx
+desktop/src-tauri/resources/gigaam/tokens.txt
+desktop/src-tauri/resources/gigaam/LICENSE
+
+# Local recordings; keep the STT regression fixture
+*.wav
+!desktop/src-tauri/tests/fixtures/*.wav

@@ -1,0 +1,87 @@
+# Build Dictator.app on Apple Silicon and attach a zip to the GitHub Release.
+#
+# Cut a release:
+#   git tag v0.1.0
+#   git push origin v0.1.0
+#
+# Or run this workflow manually (Actions → Release macOS) to get an artifact
+# without publishing a Release.
+name: Release macOS
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+          cache-on-failure: true
+
+      - name: Cache GigaAM ONNX
+        uses: actions/cache@v4
+        with:
+          path: desktop/src-tauri/resources/gigaam
+          key: gigaam-v3-2025-12-16
+
+      - name: Fetch STT model
+        run: bash scripts/fetch-stt-model.sh
+
+      - name: Install JS dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Build Dictator.app
+        working-directory: desktop
+        run: npm run tauri build -- --bundles app --target aarch64-apple-darwin
+
+      - name: Zip .app
+        run: bash scripts/package-macos-zip.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dictator-macos-aarch64
+          path: Dictator-macos-aarch64.app.zip
+          if-no-files-found: error
+
+      - name: Attach zip to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Dictator-macos-aarch64.app.zip
+          generate_release_notes: true
+          body: |
+            Готовое приложение для Mac с чипом Apple (M1 и новее). Модель распознавания уже внутри.
+
+            1. Скачайте `Dictator-macos-aarch64.app.zip`
+            2. Распакуйте и перетащите `Dictator.app` в папку «Программы»
+            3. Правый клик по Dictator → «Открыть»
+            4. Включите микрофон и универсальный доступ
+
+            Подробно — `docs/INSTALL.md` в репозитории.

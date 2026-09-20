@@ -1,0 +1,62 @@
+[package]
+name = "dictator-desktop"
+version = "0.1.0"
+description = "Dictator desktop shell (tray, hotkey, settings)"
+authors = ["LenarBad"]
+edition = "2021"
+
+[lib]
+name = "desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+# 0.15 leaks the CoreAudio stream on non-default mics, so the orange
+# Control Center indicator stays after dictation stops.
+cpal = "0.16"
+hound = "3"
+sherpa-onnx = "1.13.8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "libc",
+    "NSPasteboard",
+    "NSRunningApplication",
+    "NSWorkspace",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSString",
+] }
+window-vibrancy = "0.6"
+
+[features]
+# Production webview (`tauri://localhost`). `cargo build --release` without this
+# loads http://localhost:1420 and the settings window is blank. `tauri dev`
+# omits it so Vite can serve the UI.
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+# tray-icon 0.24.2 pops the macOS menu with performClick, which often no-ops
+# (and click handling can panic if NSEvent has no window). Keep the crate
+# version Tauri expects, with the popUpStatusItemMenu path from upstream PR 318.
+[patch.crates-io]
+tray-icon = { path = "vendor/tray-icon" }

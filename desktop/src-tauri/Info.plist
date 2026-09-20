@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Dictator записывает голос локально, чтобы распознать речь и вставить текст. Аудио никуда не отправляется.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Dictator использует системные события, чтобы вставить распознанный текст в активное поле.</string>
+</dict>
+</plist>
