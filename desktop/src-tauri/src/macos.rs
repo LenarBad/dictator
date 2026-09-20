@@ -375,8 +375,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cursor_is_treated_as_browser_like() {
-        assert!(is_browser_like("com.todesktop.cursor"));
+    fn electron_and_browser_apps_skip_ax() {
+        assert!(is_browser_like("com.todesktop.example"));
         assert!(is_browser_like("com.microsoft.VSCode"));
         assert!(!is_browser_like("com.apple.Notes"));
     }

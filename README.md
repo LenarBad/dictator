@@ -21,17 +21,16 @@
 1. Откройте [Releases](https://github.com/LenarBad/dictator/releases/latest)
 2. Скачайте `Dictator-macos-aarch64.app.zip` (~250 МБ, модель уже внутри)
 3. Распакуйте архив и перетащите `Dictator.app` в папку **Программы**
-4. Правый клик по Dictator → **Открыть** → ещё раз **Открыть**  
-   (macOS предупредит, что разработчик неизвестен — это ad-hoc подпись)
+4. При первом запуске macOS покажет предупреждение Gatekeeper (ad-hoc подпись). Нажмите **Done** / **Готово**, затем **Системные настройки → Конфиденциальность и безопасность → Всё равно открыть**. Либо правый клик по Dictator → **Открыть** → снова **Открыть**. Не жмите **Move to Trash**.
 5. **Системные настройки → Конфиденциальность и безопасность:**
    - **Микрофон** — включите Dictator
    - **Универсальный доступ** — добавьте `/Applications/Dictator.app`
 
 Иконки в Dock не будет. Ищите Dictator **в строке меню справа вверху**, рядом с часами.
 
-Подробно, с ошибками Gatekeeper и сборкой из исходников: **[docs/INSTALL.md](docs/INSTALL.md)**.
-
 Запускайте **только** копию в «Программах», не из «Загрузок». В списках разрешений должен быть **Dictator**, не Terminal. После обновления с нового zip удалите Dictator из универсального доступа и добавьте `/Applications/Dictator.app` заново.
+
+Подробно, FAQ (Gatekeeper, вставка, обновления) и сборка из исходников: **[docs/INSTALL.md](docs/INSTALL.md)**.
 
 ---
 
@@ -76,57 +75,3 @@
 - предзагрузка модели при старте
 
 Диагностика вставки: `~/Library/Application Support/dictator/last-paste.log`. Нужно `trusted=true` и `exe=.../Applications/Dictator.app/...`.
-
-## Сборка для разработки
-
-Ежедневный путь — **`/Applications/Dictator.app`**. Скрипт `npm run build:app` скачивает ONNX, если файлов ещё нет, подписывает ad-hoc и ставит приложение в `/Applications`.
-
-Сборка с ad-hoc подписью: Gatekeeper покажет «неизвестный разработчик». Не открывайте `.app` из репозитория: универсальный доступ привязан к подписи конкретного бандла. Скрипт сборки удаляет копию в `bundle/macos`, чтобы Spotlight не предлагал её рядом с `/Applications`.
-
-Для разработки без пересборки бандла:
-
-```bash
-bash scripts/fetch-stt-model.sh
-cd desktop
-npm install
-npm run tauri dev
-```
-
-Проверка UI/хоткея/вставки **без модели**:
-
-```bash
-cd desktop
-DICTATOR_STT_STUB=1 npm run tauri dev
-```
-
-Требования для разработки: Node и Rust. Первый `fetch-stt-model` качает чекпоинт (~221 MB) в `desktop/src-tauri/resources/gigaam`. ffmpeg не нужен.
-
-```bash
-cd desktop/src-tauri
-cargo test
-```
-
-Тесты не грузят ONNX. Живое распознавание — через `npm run tauri dev` или `/Applications/Dictator.app`.
-
-Нотаризация и Developer ID — когда появится сертификат: замените `signingIdentity` на `Developer ID Application: …` и прогоните `notarytool`.
-
-Релиз для людей собирает GitHub Actions: тег `v0.1.0` → zip на странице Releases. Вручную: Actions → **Release macOS** → Run workflow.
-
-## Структура
-
-```
-desktop/src/                     # окно настроек (Vite + TypeScript)
-desktop/src-tauri/src/           # tray, хоткей, запись, STT, вставка
-desktop/src-tauri/src/stt.rs     # sherpa-onnx + GigaAM ONNX
-desktop/src-tauri/resources/gigaam/  # модель скачивается, не коммитится
-scripts/fetch-stt-model.sh
-scripts/build-macos-app.sh
-scripts/package-macos-zip.sh
-.github/workflows/release-macos.yml
-docs/INSTALL.md
-LICENSE
-```
-
-Модель задаётся переменной `DICTATOR_MODEL_DIR`, если файлы лежат не в бандле и не в `resources/gigaam`.
-
-Сторонние компоненты: [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache-2.0), веса GigaAM (MIT).
