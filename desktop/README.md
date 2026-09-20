@@ -39,7 +39,7 @@ DICTATOR_STT_STUB=1 npm run tauri dev
 ## macOS .app и разрешения
 
 Локально стоит ad-hoc подпись (`signingIdentity: "-"`), чтобы TCC (микрофон и
-универсальный доступ) вешался на **Dictator.app** / `com.dictator.desktop`.
+универсальный доступ) вешался на **Dictator.app** / `io.lenar.dictator`.
 
 Запускайте **только** `/Applications/Dictator.app`. После установки скрипт
 удаляет копию в `target/.../bundle/macos`, иначе Spotlight показывает два Dictator.

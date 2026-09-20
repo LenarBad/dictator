@@ -52,7 +52,7 @@ pub fn prompt_if_needed() {
 }
 
 const SKIP_BUNDLES: &[&str] = &[
-    "com.dictator.desktop",
+    "io.lenar.dictator",
     "com.apple.systemuiserver",
     "com.apple.controlcenter",
     "com.apple.notificationcenterui",
@@ -384,7 +384,7 @@ mod tests {
     #[test]
     fn skips_system_ui_and_self() {
         assert!(is_skipped("com.apple.systemuiserver"));
-        assert!(is_skipped("com.dictator.desktop"));
+        assert!(is_skipped("io.lenar.dictator"));
         assert!(!is_skipped("com.apple.Notes"));
     }
 }
