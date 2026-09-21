@@ -315,9 +315,8 @@ fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         ],
     )?;
 
-    TrayIconBuilder::with_id("main")
+    let tray = TrayIconBuilder::with_id("main")
         .icon(tray_image(AppStatus::Idle))
-        .icon_as_template(true)
         .menu(&menu)
         .show_menu_on_left_click(true)
         .tooltip("Dictator")
@@ -329,8 +328,10 @@ fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 app.exit(0);
             }
             _ => {}
-        })
-        .build(app)?;
+        });
+    #[cfg(target_os = "macos")]
+    let tray = tray.icon_as_template(true);
+    tray.build(app)?;
 
     app.state::<AppState>()
         .tray
@@ -390,8 +391,11 @@ fn refresh_tray_on_main(app: &AppHandle) {
     }
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_tooltip(Some(format!("Dictator — {} ({hotkey})", status.label_ru())));
+        #[cfg(target_os = "macos")]
         let _ = tray
             .set_icon_with_as_template(Some(tray_image(status)), matches!(status, AppStatus::Idle));
+        #[cfg(not(target_os = "macos"))]
+        let _ = tray.set_icon(Some(tray_image(status)));
     }
 }
 

@@ -82,8 +82,6 @@ impl Settings {
 pub fn settings_path() -> PathBuf {
     let mut dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     dir.push("dictator");
-    #[cfg(windows)]
-    dir.push("dictator");
     dir.join("settings.json")
 }
 

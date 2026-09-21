@@ -22,8 +22,8 @@
 |---|---|
 | 1. Рефакторинг без поведения | **сделано** — `desktop/src-tauri/src/platform/` (`mod.rs`, `macos.rs`, заглушка `other.rs`) |
 | 2. CI Windows (артефакт без релиза) | workflow добавлен — нужен push и Actions → Release Windows → Run workflow |
-| 3. Windows компилируется | не начато |
-| 4. Паритет продукта | не начато |
+| 3. Windows компилируется | **в работе** — `platform/windows.rs`: буфер на main thread, Ctrl+V |
+| 4. Паритет продукта | частично: HUD `NOACTIVATE`, тосты, `set_icon` |
 | 5. Доки + тег в GitHub Release | не начато |
 
 ## Принцип

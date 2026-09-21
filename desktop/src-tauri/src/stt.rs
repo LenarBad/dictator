@@ -164,6 +164,7 @@ fn candidate_model_dirs() -> Vec<PathBuf> {
             }
             dirs.push(macos.join("gigaam"));
             dirs.push(macos.join("resources").join("gigaam"));
+            dirs.push(macos.join("resources").join("resources").join("gigaam"));
         }
     }
     dirs.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/gigaam"));

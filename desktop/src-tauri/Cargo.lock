@@ -788,6 +788,7 @@ dependencies = [
 name = "dictator-desktop"
 version = "0.2.1"
 dependencies = [
+ "clipboard-win",
  "core-foundation",
  "cpal",
  "dirs",
@@ -802,7 +803,9 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-global-shortcut",
+ "tauri-winrt-notification",
  "window-vibrancy",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -3969,6 +3972,17 @@ dependencies = [
  "dunce",
  "embed-resource",
  "toml 1.1.6+spec-1.1.0",
+]
+
+[[package]]
+name = "tauri-winrt-notification"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ed071c670382e85fc2f48ae706492d8c338f4f89bf72520d32f8abfe880aade"
+dependencies = [
+ "thiserror 2.0.20",
+ "windows 0.61.3",
+ "windows-version",
 ]
 
 [[package]]

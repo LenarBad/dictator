@@ -1,6 +1,6 @@
 //! Non-macOS stand-ins until `windows.rs` exists. Clipboard-only paste.
 
-#![cfg(not(target_os = "macos"))]
+#![cfg(not(any(target_os = "macos", target_os = "windows")))]
 
 use tauri::AppHandle;
 use tauri::WebviewWindow;
