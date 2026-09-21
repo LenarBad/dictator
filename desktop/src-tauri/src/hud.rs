@@ -67,8 +67,7 @@ fn show(app: &AppHandle) {
     position(&window, app);
     style(&window);
     let _ = window.show();
-    #[cfg(target_os = "macos")]
-    demote_key(&window);
+    crate::platform::demote_hud(&window);
 }
 
 fn hide(app: &AppHandle) {
@@ -110,18 +109,7 @@ fn ensure(app: &AppHandle) -> Option<WebviewWindow> {
 fn style(window: &WebviewWindow) {
     let _ = window.set_theme(Some(tauri::Theme::Dark));
     let _ = window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
-    #[cfg(target_os = "macos")]
-    {
-        if let Err(err) = window_vibrancy::apply_vibrancy(
-            window,
-            window_vibrancy::NSVisualEffectMaterial::HudWindow,
-            Some(window_vibrancy::NSVisualEffectState::Active),
-            Some(24.0),
-        ) {
-            eprintln!("dictator: hud vibrancy failed: {err}");
-        }
-        configure_panel(window);
-    }
+    crate::platform::style_hud(window);
 }
 
 fn position(window: &WebviewWindow, app: &AppHandle) {
@@ -157,38 +145,6 @@ fn monitor_for(app: &AppHandle) -> Option<tauri::Monitor> {
         }
     }
     app.primary_monitor().ok().flatten()
-}
-
-#[cfg(target_os = "macos")]
-fn configure_panel(window: &WebviewWindow) {
-    let Ok(ptr) = window.ns_window() else {
-        return;
-    };
-    if ptr.is_null() {
-        return;
-    }
-    unsafe {
-        let ns = &*ptr.cast::<objc2::runtime::AnyObject>();
-        let _: () = objc2::msg_send![ns, setHidesOnDeactivate: false];
-        // CanJoinAllSpaces | Transient | IgnoresCycle | FullScreenAuxiliary
-        let behavior: usize = (1 << 0) | (1 << 3) | (1 << 6) | (1 << 8);
-        let _: () = objc2::msg_send![ns, setCollectionBehavior: behavior];
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn demote_key(window: &WebviewWindow) {
-    let Ok(ptr) = window.ns_window() else {
-        return;
-    };
-    if ptr.is_null() {
-        return;
-    }
-    unsafe {
-        let ns = &*ptr.cast::<objc2::runtime::AnyObject>();
-        let _: () = objc2::msg_send![ns, resignKeyWindow];
-        let _: () = objc2::msg_send![ns, orderFrontRegardless];
-    }
 }
 
 #[cfg(test)]

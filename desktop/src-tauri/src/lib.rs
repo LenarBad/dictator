@@ -1,10 +1,9 @@
 mod hotkey;
 mod hud;
-#[cfg(target_os = "macos")]
-mod macos;
 mod notify;
 mod paste;
 mod pipeline;
+mod platform;
 mod recorder;
 mod settings;
 mod stt;
@@ -176,12 +175,7 @@ pub fn run() {
             build_tray(app.handle())?;
             refresh_tray(app.handle());
             pipeline::spawn_engine_in_background(app.handle().clone());
-
-            #[cfg(target_os = "macos")]
-            {
-                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-                crate::macos::prompt_if_needed();
-            }
+            crate::platform::on_setup(app.handle());
             crate::hud::prefetch(app.handle());
             Ok(())
         })
@@ -206,12 +200,7 @@ pub fn run() {
                                 eprintln!("dictator: failed to restore hotkey: {err}");
                             }
                         });
-                    #[cfg(target_os = "macos")]
-                    {
-                        let _ = window
-                            .app_handle()
-                            .set_activation_policy(tauri::ActivationPolicy::Accessory);
-                    }
+                    crate::platform::on_settings_closed(window.app_handle());
                 }
                 _ => {}
             }
@@ -418,24 +407,11 @@ fn tray_image(status: AppStatus) -> Image<'static> {
 fn apply_window_glass(window: &tauri::WebviewWindow) {
     let _ = window.set_theme(Some(tauri::Theme::Dark));
     let _ = window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
-    #[cfg(target_os = "macos")]
-    {
-        if let Err(err) = window_vibrancy::apply_vibrancy(
-            window,
-            window_vibrancy::NSVisualEffectMaterial::HudWindow,
-            Some(window_vibrancy::NSVisualEffectState::Active),
-            None,
-        ) {
-            eprintln!("dictator: vibrancy failed: {err}");
-        }
-    }
+    crate::platform::style_settings(window);
 }
 
 fn show_settings(app: &AppHandle) {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    }
+    crate::platform::on_settings_opened(app);
     if let Some(window) = app.get_webview_window("settings") {
         apply_window_glass(&window);
         let _ = window.unminimize();
@@ -471,60 +447,13 @@ fn show_settings(app: &AppHandle) {
 }
 
 fn open_permission_inner(kind: &str) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let url = match kind {
-            "microphone" => {
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-            }
-            "accessibility" => {
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-            }
-            _ => return Err("unknown permission pane".into()),
-        };
-        std::process::Command::new("open")
-            .arg(url)
-            .spawn()
-            .map_err(|err| err.to_string())?;
-        return Ok(());
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let uri = match kind {
-            "microphone" => "ms-settings:privacy-microphone",
-            _ => "ms-settings:easeofaccess",
-        };
-        std::process::Command::new("cmd")
-            .args(["/C", "start", uri])
-            .spawn()
-            .map_err(|err| err.to_string())?;
-        return Ok(());
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        let _ = kind;
-        Err("opening system settings is not wired on this OS yet".into())
-    }
+    crate::platform::open_permission(kind)
 }
 
 fn microphone_trusted() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        crate::macos::microphone_trusted()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        true
-    }
+    crate::platform::microphone_trusted()
 }
 
 fn accessibility_trusted() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        crate::macos::is_trusted()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        true
-    }
+    crate::platform::is_trusted()
 }
