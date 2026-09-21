@@ -28,19 +28,14 @@ pub fn ensure_engine(app: &AppHandle) -> Result<(), String> {
 
 pub fn start_recording(app: &AppHandle) -> Result<AppStatus, String> {
     let state = app.state::<AppState>();
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(target) = crate::macos::capture_frontmost() {
-            eprintln!(
-                "dictator: captured focus pid={} bundle={}",
-                target.pid, target.bundle
-            );
-            *state.focus.lock().expect("focus") = Some(target);
-        } else {
-            eprintln!(
-                "dictator: no focus target at recording start; will Cmd+V into current focus"
-            );
-        }
+    if let Some(target) = crate::platform::capture_frontmost() {
+        eprintln!(
+            "dictator: captured focus pid={} bundle={}",
+            target.pid, target.bundle
+        );
+        *state.focus.lock().expect("focus") = Some(target);
+    } else {
+        eprintln!("dictator: no focus target at recording start; will Cmd+V into current focus");
     }
     let device = {
         let names: Vec<String> = crate::recorder::list_microphones()
@@ -153,27 +148,7 @@ fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
             format!("{}…", text.chars().take(77).collect::<String>())
         };
         if settings.paste_enabled {
-            #[cfg(target_os = "macos")]
-            {
-                if crate::macos::is_trusted() {
-                    crate::notify::show(
-                        "Dictator",
-                        &format!("{preview}  (если не появилось — Cmd+V)"),
-                    );
-                } else {
-                    crate::notify::show(
-                        "Dictator",
-                        "Текст в буфере. Добавьте Dictator в Универсальный доступ — иначе вставка не сработает.",
-                    );
-                }
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                crate::notify::show(
-                    "Dictator",
-                    &format!("{preview}  (если не появилось — Cmd+V)"),
-                );
-            }
+            crate::notify::show("Dictator", &crate::platform::paste_done_message(&preview));
         } else {
             crate::notify::show("Dictator", &format!("Скопировано: {preview}"));
         }

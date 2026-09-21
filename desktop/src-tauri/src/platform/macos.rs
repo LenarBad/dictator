@@ -1,10 +1,11 @@
-//! macOS TCC helpers, focus restore, and Cmd+V paste.
+//! macOS TCC helpers, focus restore, Cmd+V paste, HUD chrome, and toasts.
 
 #![cfg(target_os = "macos")]
 
 use std::ffi::CStr;
 use std::fs;
 use std::ptr;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -18,6 +19,9 @@ use objc2_app_kit::{
     NSRunningApplication, NSWorkspace,
 };
 use objc2_foundation::{NSArray, NSString};
+use tauri::{AppHandle, WebviewWindow};
+
+const MAIN_THREAD_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
@@ -274,6 +278,145 @@ fn write_note(message: &str) {
         .unwrap_or_else(|_| "?".into());
     let body = format!("trusted={trusted}\nexe={exe}\n{message}");
     let _ = fs::write(path, body);
+}
+
+pub fn deliver_text(
+    app: &AppHandle,
+    text: &str,
+    paste: bool,
+    restore: Option<&FocusTarget>,
+) -> Result<(), String> {
+    let text = text.to_string();
+    let target = restore.cloned();
+    match run_on_main(app, move || {
+        if paste {
+            insert_or_paste(&text, target.as_ref())
+        } else {
+            write_clipboard_text(&text).map(|_| "clipboard".into())
+        }
+    }) {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(err)) => {
+            eprintln!("dictator: paste failed ({err})");
+            Err(err)
+        }
+        Err(err) => {
+            eprintln!("dictator: paste dispatch failed ({err})");
+            Err(err)
+        }
+    }
+}
+
+fn run_on_main<T, F>(app: &AppHandle, work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let (tx, rx) = mpsc::channel();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(work());
+    })
+    .map_err(|err| err.to_string())?;
+    rx.recv_timeout(MAIN_THREAD_TIMEOUT)
+        .map_err(|_| "timed out waiting for the main thread".into())
+}
+
+pub fn notify(title: &str, message: &str) {
+    let title = serde_json::to_string(title).unwrap_or_else(|_| "\"Dictator\"".into());
+    let message = serde_json::to_string(message).unwrap_or_else(|_| "\"\"".into());
+    // osascript can hang on Automation prompts. Never wait for it on the
+    // caller's thread — that used to freeze the Carbon hotkey callback.
+    let _ = std::thread::Builder::new()
+        .name("dictator-notify".into())
+        .spawn(move || {
+            let script = format!("display notification {message} with title {title}");
+            let _ = std::process::Command::new("osascript")
+                .args(["-e", &script])
+                .status();
+        });
+}
+
+pub fn open_permission(kind: &str) -> Result<(), String> {
+    let url = match kind {
+        "microphone" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+        }
+        "accessibility" => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        }
+        _ => return Err("unknown permission pane".into()),
+    };
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
+pub fn on_setup(app: &AppHandle) {
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    prompt_if_needed();
+}
+
+pub fn on_settings_opened(app: &AppHandle) {
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+}
+
+pub fn on_settings_closed(app: &AppHandle) {
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+}
+
+pub fn style_settings(window: &WebviewWindow) {
+    if let Err(err) = window_vibrancy::apply_vibrancy(
+        window,
+        window_vibrancy::NSVisualEffectMaterial::HudWindow,
+        Some(window_vibrancy::NSVisualEffectState::Active),
+        None,
+    ) {
+        eprintln!("dictator: vibrancy failed: {err}");
+    }
+}
+
+pub fn style_hud(window: &WebviewWindow) {
+    if let Err(err) = window_vibrancy::apply_vibrancy(
+        window,
+        window_vibrancy::NSVisualEffectMaterial::HudWindow,
+        Some(window_vibrancy::NSVisualEffectState::Active),
+        Some(24.0),
+    ) {
+        eprintln!("dictator: hud vibrancy failed: {err}");
+    }
+    configure_panel(window);
+}
+
+pub fn demote_hud(window: &WebviewWindow) {
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    if ptr.is_null() {
+        return;
+    }
+    unsafe {
+        let ns = &*ptr.cast::<objc2::runtime::AnyObject>();
+        let _: () = objc2::msg_send![ns, resignKeyWindow];
+        let _: () = objc2::msg_send![ns, orderFrontRegardless];
+    }
+}
+
+fn configure_panel(window: &WebviewWindow) {
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    if ptr.is_null() {
+        return;
+    }
+    unsafe {
+        let ns = &*ptr.cast::<objc2::runtime::AnyObject>();
+        let _: () = objc2::msg_send![ns, setHidesOnDeactivate: false];
+        // CanJoinAllSpaces | Transient | IgnoresCycle | FullScreenAuxiliary
+        let behavior: usize = (1 << 0) | (1 << 3) | (1 << 6) | (1 << 8);
+        let _: () = objc2::msg_send![ns, setCollectionBehavior: behavior];
+    }
 }
 
 const KEY_V: u16 = 9; // kVK_ANSI_V
