@@ -9,6 +9,17 @@ ARCHIVE_NAME="sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.ta
 # sha256 of the upstream tar.bz2 (recompute if you bump ARCHIVE_NAME / URL).
 EXPECTED_SHA256="f9620a0099019c6afcee26525ef9ed3297fa50dd5691c1902af0c948fc1a470b"
 
+file_sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    echo "fetch-stt-model: need shasum or sha256sum" >&2
+    exit 1
+  fi
+}
+
 need_fetch=0
 for name in encoder.int8.onnx decoder.onnx joiner.onnx tokens.txt; do
   if [[ ! -f "$DEST/$name" ]]; then
@@ -27,7 +38,7 @@ trap 'rm -rf "$TMP"' EXIT
 echo "fetch-stt-model: downloading $ARCHIVE_NAME"
 curl -L --fail --retry 3 -o "$TMP/$ARCHIVE_NAME" "$URL"
 
-actual="$(shasum -a 256 "$TMP/$ARCHIVE_NAME" | awk '{print $1}')"
+actual="$(file_sha256 "$TMP/$ARCHIVE_NAME")"
 if [[ "$actual" != "$EXPECTED_SHA256" ]]; then
   echo "fetch-stt-model: SHA-256 mismatch" >&2
   echo "  expected: $EXPECTED_SHA256" >&2
@@ -37,7 +48,12 @@ fi
 echo "fetch-stt-model: SHA-256 ok"
 
 tar -xjf "$TMP/$ARCHIVE_NAME" -C "$TMP"
-INNER="$(find "$TMP" -name encoder.int8.onnx -print -quit | xargs dirname)"
+INNER="$(find "$TMP" -name encoder.int8.onnx -print -quit)"
+if [[ -z "$INNER" ]]; then
+  echo "fetch-stt-model: encoder.int8.onnx not found in archive" >&2
+  exit 1
+fi
+INNER="$(dirname "$INNER")"
 cp "$INNER/encoder.int8.onnx" "$INNER/decoder.onnx" "$INNER/joiner.onnx" "$INNER/tokens.txt" "$DEST/"
 if [[ -f "$INNER/LICENSE" ]]; then
   cp "$INNER/LICENSE" "$DEST/"

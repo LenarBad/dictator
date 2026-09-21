@@ -4,14 +4,27 @@
 
 Цель первого релиза: **Windows 10 1809+ x64**. ARM64 и Linux — позже, как Intel Mac сейчас.
 
+## Кто где работает
+
+На тестовом Windows **не ставить** Visual Studio, Rust, Node, WebView2 SDK, `tauri dev`. ПК нужен только как пользователь: скачал установщик → поставил → прогнал сценарии.
+
+| Машина | Роль |
+|---|---|
+| Mac | Весь код, проверка что macOS не сломалась |
+| GitHub `windows-2022` | Единственный компилятор Windows (`x86_64-pc-windows-msvc`, NSIS + zip) |
+| Windows 10 1809+ x64 | Установка артефакта и ручной прогон. Runtime: WebView2 Evergreen — его подтянет NSIS bootstrapper |
+
+Кросс-сборка с Mac на MSVC не используется.
+
 ## Статус
 
 | Шаг | Состояние |
 |---|---|
 | 1. Рефакторинг без поведения | **сделано** — `desktop/src-tauri/src/platform/` (`mod.rs`, `macos.rs`, заглушка `other.rs`) |
-| 2. Windows компилируется | не начато |
-| 3. Паритет продукта | не начато |
-| 4. CI + zip/NSIS, доки | не начато |
+| 2. CI Windows (артефакт без релиза) | workflow добавлен — нужен push и Actions → Release Windows → Run workflow |
+| 3. Windows компилируется | не начато |
+| 4. Паритет продукта | не начато |
+| 5. Доки + тег в GitHub Release | не начато |
 
 ## Принцип
 
@@ -104,7 +117,7 @@ Windows → обычный PNG/ICO через set_icon
 
 Не дублировать OS-файлы ради этого.
 
-- **`stt.rs` `candidate_model_dirs`**: сейчас ищет `Contents/MacOS` / `Resources`. Добавить `<exe_dir>/gigaam` и `<exe_dir>/resources/gigaam` — нужно и для Windows, и для `tauri dev`.
+- **`stt.rs` `candidate_model_dirs`**: сейчас ищет `Contents/MacOS` / `Resources`. Добавить `<exe_dir>/gigaam` и `<exe_dir>/resources/gigaam` — путь установленного `.exe`, не `tauri dev`.
 - **`settings_path`**: на Windows сейчас `%APPDATA%\dictator\dictator\settings.json` (двойной `push`). Оставить `%APPDATA%\dictator\settings.json`.
 - **Микрофоны**: маркеры `microphone array`, `realtek`, `stereo mix`; `vb-audio` / `cable input` уже есть.
 - **Хоткеи в UI**: `format.ts` рисует ⌃⇧. С `platform` в state: Windows → `Ctrl+Shift+D`.
@@ -116,25 +129,37 @@ Windows → обычный PNG/ICO через set_icon
 - Не GPU (DirectML) в первом релизе — CPU, как на Mac.
 - Не Linux.
 - Не Windows ARM64. Цель: **Windows 10 1809+ x64**, WebView2 Evergreen (NSIS bootstrapper Tauri).
-- Не Authenticode в том же заходе (SmartScreen ≈ Gatekeeper).
+- Не Authenticode в том же заходе (SmartScreen ≈ Gatekeeper: «Подробнее» → «Выполнить в любом случае»).
 - Не переносить vendored patch `tray-icon` — он только про macOS-меню.
+- Не `tauri build` / `tauri dev` на тестовом ПК и не кросс-компиляция с Mac.
 
-## Сборка и релиз
+## Сборка: GitHub, не локальный Windows
 
-Отдельный job, не ломая `.github/workflows/release-macos.yml`.
+Отдельный workflow, не ломая `.github/workflows/release-macos.yml`. Зеркало Mac: `workflow_dispatch` даёт zip/NSIS **без** GitHub Release; тег `v*` кладёт файлы в тот же Release.
 
 | | Mac (как есть) | Windows |
 |---|---|---|
+| Workflow | `release-macos.yml` | `release-windows.yml` |
 | Runner | `macos-14` | `windows-2022` |
 | Target | `aarch64-apple-darwin` | `x86_64-pc-windows-msvc` |
-| Артефакт | `Dictator-macos-aarch64.app.zip` | NSIS `Dictator-windows-x64.exe` + zip папки (модель внутри, ~250 МБ) |
-| Tag `v*` | оба job кладут файлы в один GitHub Release (`softprops`, upsert) | |
+| Артефакт | `Dictator-macos-aarch64.app.zip` | NSIS `Dictator-windows-x64.exe` (основной для теста) + zip папки (модель внутри, ~250 МБ) |
+| Actions → Run workflow | артефакт, без релиза | то же |
+| Tag `v*` | оба workflow кладут файлы в один GitHub Release (`softprops`, upsert) | |
 
-Локально: `npm run tauri build -- --bundles nsis` (или zip), не `build:app` (он macOS-only).
+NSIS — то, что ставить на ПК (bootstrapper WebView2). Zip — запасной портативный прогон.
 
-`scripts/fetch-stt-model.sh` + кэш GigaAM — как на Mac. sherpa при первой сборке качает static-MT; кэшировать cargo target.
+`scripts/fetch-stt-model.sh` (+ `sha256sum` или `shasum`) и `scripts/package-windows.sh` (NSIS → `Dictator-windows-x64.exe`, папка exe+модель → `Dictator-windows-x64.zip`). sherpa при первой сборке качает static-MT; кэшировать cargo target. Job заведён **до** `windows.rs`: текущая заглушка `other.rs` должна собраться и дать установщик для дымового теста.
 
-После появления Windows-артефакта обновить `.cursor/rules/release.mdc`: CI — не только `release-macos.yml`.
+`.cursor/rules/release.mdc` знает оба workflow: тег `v*` — оба attach в один Release; без релиза — Run workflow.
+
+### Цикл итерации (без dev-стека на ПК)
+
+1. Правка на Mac, push ветки.
+2. Actions → Release Windows → Run workflow (эта ветка). Ждать ~15–40 мин.
+3. Скачать `Dictator-windows-x64.exe` с run, поставить на ПК, прогнать чеклист ниже.
+4. Замечания → снова шаг 1.
+
+Компилятор — лог Actions. Если `cfg(windows)` не собрался, править на Mac по ошибке job, не ставя MSVC дома.
 
 ## Документация (после рабочего бинаря)
 
@@ -144,16 +169,19 @@ README, [INSTALL.md](INSTALL.md), [SECURITY.md](../SECURITY.md), [CONTRIBUTING.m
 
 ## Порядок работ
 
-Чтобы Mac не разъехался.
+Чтобы Mac не разъехался. CI — раньше адаптера: иначе нечем собрать установщик.
 
 1. **Рефакторинг без поведения** — **сделано.** `platform/mod.rs`, перенос `macos.rs`, `pipeline` / `paste` / `lib` / `hud` / `notify` зовут `platform::*`.
-2. **Windows компилируется** — заменить `other.rs` на `windows.rs`: tray, настройки, запись, STT, буфер. Можно жить с «только копировать».
-3. **Паритет продукта** — фокус + Ctrl+V, HUD `NOACTIVATE`, тосты, строка микрофона, иконки трея.
-4. **CI + zip/NSIS** на тег, доки.
+2. **CI Windows** — `release-windows.yml` в репозитории. После push: Actions → Release Windows → Run workflow (эта ветка). Скачать NSIS, убедиться что ставится и открывается (clipboard-only ок).
+3. **Windows компилируется** — на Mac заменить `other.rs` на `windows.rs`: tray, настройки, запись, STT, буфер. Push → дождаться зелёного job. Можно жить с «только копировать».
+4. **Паритет продукта** — фокус + Ctrl+V, HUD `NOACTIVATE`, тосты, строка микрофона, иконки трея. Каждая порция — через артефакт на ПК, не через `tauri dev`.
+5. **Доки** — README / INSTALL / SECURITY / CONTRIBUTING, когда бинарь уже ставится с Actions.
 
-Шаг 1 закрыт; 2–3 — вся новая логика; 4 — зеркало macOS workflow.
+Шаг 1 закрыт; 2 — компилятор; 3–4 — логика; 5 — когда продукт уже гоняется с установщика.
 
 ## Риски, которые стоит прогнать руками на ПК
+
+Ставить **NSIS с Actions**, не собранный локально. На ПК: микрофон в Параметрах, SmartScreen, трей (не панель задач для HUD).
 
 1. HUD перехватывает фокус → вставка в себя.
 2. Прозрачность WebView2.
@@ -165,4 +193,4 @@ README, [INSTALL.md](INSTALL.md), [SECURITY.md](../SECURITY.md), [CONTRIBUTING.m
 
 ## Итог
 
-На Windows тот же хоткей `ctrl+shift+d`, та же модель, тот же HUD, иконка в трее, текст в активное поле через буфер + Ctrl+V. Новый код — в основном `platform/windows.rs` и CI, не вторая копия Dictator.
+На Windows тот же хоткей `ctrl+shift+d`, та же модель, тот же HUD, иконка в трее, текст в активное поле через буфер + Ctrl+V. Код пишется на Mac, собирает GitHub, на ПК только ставится NSIS. Новый код — в основном `platform/windows.rs` и CI, не вторая копия Dictator.
