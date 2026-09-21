@@ -13,7 +13,7 @@ Dictator is a local speech-to-text tray app. After install it does **not** conta
 | Capability | Why |
 |---|---|
 | Microphone | Capture audio for dictation |
-| Accessibility | Focus restore and paste into the frontmost app (AX insert or synthesized Cmd+V) |
+| Accessibility | Focus restore and paste into the frontmost app (synthesized Cmd+V) |
 | Global hotkey | Start/stop recording from any app |
 | Clipboard write | Deliver recognized text |
 

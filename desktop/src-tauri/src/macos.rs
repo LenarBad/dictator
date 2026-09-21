@@ -1,4 +1,4 @@
-//! macOS TCC helpers, focus restore, AX insert, and Cmd+V paste.
+//! macOS TCC helpers, focus restore, and Cmd+V paste.
 
 #![cfg(target_os = "macos")]
 
@@ -8,10 +8,10 @@ use std::ptr;
 use std::thread;
 use std::time::Duration;
 
-use core_foundation::base::{CFTypeRef, TCFType};
+use core_foundation::base::TCFType;
 use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
-use core_foundation::string::{CFString, CFStringRef};
+use core_foundation::string::CFString;
 use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{
     NSApplicationActivationOptions, NSPasteboard, NSPasteboardTypeString, NSPasteboardWriting,
@@ -24,17 +24,6 @@ extern "C" {
     fn AXIsProcessTrusted() -> bool;
     fn AXIsProcessTrustedWithOptions(options: core_foundation::dictionary::CFDictionaryRef)
         -> bool;
-    fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
-    fn AXUIElementCopyAttributeValue(
-        element: AXUIElementRef,
-        attribute: CFStringRef,
-        value: *mut CFTypeRef,
-    ) -> i32;
-    fn AXUIElementSetAttributeValue(
-        element: AXUIElementRef,
-        attribute: CFStringRef,
-        value: CFTypeRef,
-    ) -> i32;
 }
 
 #[link(name = "AVFoundation", kind = "framework")]
@@ -191,23 +180,8 @@ pub fn insert_or_paste(text: &str, target: Option<&FocusTarget>) -> Result<Strin
         log.push_str("no focus target captured at recording start\n");
     }
 
-    let use_ax = target.is_some_and(|target| target.pid > 0 && !is_browser_like(&target.bundle));
-    if use_ax {
-        let pid = target.expect("checked").pid;
-        match ax_insert_text(pid, text) {
-            Ok(()) => {
-                log.push_str("inserted via AXSelectedText\n");
-                write_note(&log);
-                return Ok("ax".into());
-            }
-            Err(err) => log.push_str(&format!("AX insert failed: {err}\n")),
-        }
-    } else if target.is_some_and(|target| is_browser_like(&target.bundle)) {
-        log.push_str("target is Electron-like; skip AXSelectedText\n");
-    } else {
-        log.push_str("skip AXSelectedText (no reliable native target)\n");
-    }
-
+    // One path for every app: clipboard + Cmd+V. Writing AXSelectedText
+    // duplicated text in Telegram and other native fields.
     match paste_command_v() {
         Ok(()) => {
             log.push_str("posted Cmd+V\n");
@@ -220,19 +194,6 @@ pub fn insert_or_paste(text: &str, target: Option<&FocusTarget>) -> Result<Strin
             Err(err)
         }
     }
-}
-
-fn is_browser_like(bundle: &str) -> bool {
-    let bundle = bundle.to_ascii_lowercase();
-    bundle.starts_with("com.todesktop.")
-        || bundle.starts_with("com.google.chrome")
-        || bundle.starts_with("company.thebrowser.")
-        || bundle.starts_with("com.microsoft.vscode")
-        || bundle.starts_with("com.visualstudio.code")
-        || bundle.starts_with("com.apple.safari")
-        || bundle.starts_with("org.mozilla.firefox")
-        || bundle.contains("electron")
-        || bundle.contains("chrome")
 }
 
 /// `clearContents` + `setString:forType:` is a no-op: the type is no longer
@@ -262,62 +223,6 @@ pub fn write_clipboard_text(text: &str) -> Result<(), String> {
         return Err("clipboard did not keep the recognized text".into());
     }
     Ok(())
-}
-
-fn ax_insert_text(pid: i32, text: &str) -> Result<(), String> {
-    if !is_trusted() {
-        return Err("accessibility not granted".into());
-    }
-    if pid <= 0 {
-        return Err("no target pid for AX insert".into());
-    }
-    unsafe {
-        let app = AXUIElementCreateApplication(pid);
-        if app.is_null() {
-            return Err("AXUIElementCreate failed".into());
-        }
-        let focused_attr = CFString::new("AXFocusedUIElement");
-        let mut focused: CFTypeRef = ptr::null();
-        let err =
-            AXUIElementCopyAttributeValue(app, focused_attr.as_concrete_TypeRef(), &mut focused);
-        if err != 0 || focused.is_null() {
-            CFRelease(app.cast());
-            return Err(format!("no focused UI element (ax={err})"));
-        }
-        let selected_attr = CFString::new("AXSelectedText");
-        let value = CFString::new(text);
-        let set_err = AXUIElementSetAttributeValue(
-            focused.cast_mut(),
-            selected_attr.as_concrete_TypeRef(),
-            value.as_CFTypeRef(),
-        );
-        let readback = ax_copy_string(focused.cast_mut(), "AXSelectedText");
-        CFRelease(focused.cast_mut());
-        CFRelease(app.cast());
-        if set_err != 0 {
-            return Err(format!("AXSelectedText failed (ax={set_err})"));
-        }
-        if readback.as_deref() != Some(text) {
-            return Err(format!(
-                "AXSelectedText did not stick (read {:?})",
-                readback.as_deref().unwrap_or("")
-            ));
-        }
-        Ok(())
-    }
-}
-
-fn ax_copy_string(element: AXUIElementRef, attribute: &str) -> Option<String> {
-    unsafe {
-        let attr = CFString::new(attribute);
-        let mut value: CFTypeRef = ptr::null();
-        let err = AXUIElementCopyAttributeValue(element, attr.as_concrete_TypeRef(), &mut value);
-        if err != 0 || value.is_null() {
-            return None;
-        }
-        let cf = CFString::wrap_under_create_rule(value as CFStringRef);
-        Some(cf.to_string())
-    }
 }
 
 fn paste_command_v() -> Result<(), String> {
@@ -376,7 +281,6 @@ const KEY_COMMAND: u16 = 0x37; // kVK_Command
 const FLAG_COMMAND: u64 = 0x0010_0000; // kCGEventFlagMaskCommand
 const HID_TAP: u32 = 0; // kCGHIDEventTap
 
-type AXUIElementRef = *mut std::ffi::c_void;
 type CGEventRef = *mut std::ffi::c_void;
 type CGEventSourceRef = *mut std::ffi::c_void;
 
@@ -399,13 +303,6 @@ extern "C" {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn electron_and_browser_apps_skip_ax() {
-        assert!(is_browser_like("com.todesktop.example"));
-        assert!(is_browser_like("com.microsoft.VSCode"));
-        assert!(!is_browser_like("com.apple.Notes"));
-    }
 
     #[test]
     fn skips_system_ui_and_self() {
