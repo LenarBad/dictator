@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -63,6 +65,36 @@ jobs:
       - name: Zip .app
         run: bash scripts/package-macos-zip.sh
 
+      - name: Compose release notes
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          PREV="$(git tag -l 'v*' --sort=-v:refname | awk -v t="$TAG" '$0 != t { print; exit }')"
+          {
+            echo "## Что нового"
+            echo
+            if [[ -n "${PREV}" ]]; then
+              CHANGES="$(git log --pretty=format:'- %s' "${PREV}..${TAG}" --no-merges \
+                | grep -v -E '^- Release [0-9]' || true)"
+              if [[ -n "${CHANGES}" ]]; then
+                printf '%s\n' "${CHANGES}"
+              else
+                echo "- Обновление сборки и метаданных."
+              fi
+              echo
+              echo "**Полный diff:** https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
+            else
+              echo "- Первый релиз."
+            fi
+            echo
+            echo "## Установка"
+            echo
+            echo "Скачайте \`Dictator-macos-aarch64.app.zip\` ниже и следуйте [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md)."
+          } > /tmp/release-notes.md
+          echo "wrote $(wc -l < /tmp/release-notes.md) lines"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -75,13 +107,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Dictator-macos-aarch64.app.zip
-          generate_release_notes: true
-          body: |
-            Готовое приложение для Mac с чипом Apple (M1 и новее). Модель распознавания уже внутри.
-
-            1. Скачайте `Dictator-macos-aarch64.app.zip`
-            2. Распакуйте и перетащите `Dictator.app` в папку «Программы»
-            3. Правый клик по Dictator → «Открыть»
-            4. Включите микрофон и универсальный доступ
-
-            Подробно — `docs/INSTALL.md` в репозитории.
+          body_path: /tmp/release-notes.md
