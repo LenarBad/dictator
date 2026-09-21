@@ -7,6 +7,7 @@ bash scripts/fetch-stt-model.sh
 ```
 
 Нужны `encoder.int8.onnx`, `decoder.onnx`, `joiner.onnx`, `tokens.txt`.
+`LICENSE` (MIT, GigaChat Team) коммитится и кладётся в `.app`; ONNX и `tokens.txt` — нет.
 Источник: [sherpa-onnx asr-models](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models)
 (`sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16`).
 Веса GigaAM: MIT, [salute-developers/GigaAM](https://github.com/salute-developers/GigaAM).

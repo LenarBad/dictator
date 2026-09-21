@@ -10,7 +10,19 @@
 - Пунктуация встроена в модель `v3_e2e_rnnt`
 - Tray-приложение на [Tauri 2](https://tauri.app): хоткей, микрофон, вставка. Python не нужен
 
-Лицензия: [MIT](LICENSE), © 2026 [LenarBad](https://github.com/LenarBad).
+Лицензия: [MIT](LICENSE), © 2026 [LenarBad](https://github.com/LenarBad).  
+Сторонние компоненты: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Безопасность: [SECURITY.md](SECURITY.md).
+
+<details>
+<summary>English</summary>
+
+Offline Russian dictation for the Mac menu bar: speak, and text is pasted into the focused field. No cloud, no account. Recognition runs on-device with [GigaAM-v3](https://github.com/salute-developers/GigaAM) (MIT). **macOS 12+ on Apple Silicon only** for now.
+
+Install from [Releases](https://github.com/LenarBad/dictator/releases/latest) (`Dictator-macos-aarch64.app.zip`), move `Dictator.app` to Applications, allow Gatekeeper via right-click → Open (ad-hoc signature), then enable Microphone and Accessibility. Full steps (RU): [docs/INSTALL.md](docs/INSTALL.md).
+
+Privacy: after install the app does not phone home. Notifications may show a short text preview; the clipboard keeps the full phrase; a crash mid-recognition can leave a temp WAV. Threat model and vulnerability reports: [SECURITY.md](SECURITY.md).
+
+</details>
 
 ---
 
@@ -61,9 +73,11 @@
 ## Приватность
 
 - Распознавание локальное. После установки приложение **не отправляет голос и текст в интернет**.
-- WAV пишется во временную папку и **удаляется** сразу после распознавания.
+- WAV пишется во временную папку и **удаляется** после распознавания (в том числе при ошибке). Если процесс убить во время STT, временный файл может остаться — его можно удалить вручную из temp.
 - Сеть нужна, чтобы скачать zip с GitHub. После установки приложение **не ходит в интернет**.
-- Уведомление macOS может показать начало распознанной фразы. В буфере обмена остаётся полный текст, пока вы его не замените.
+- Уведомление macOS может показать **начало** распознанной фразы (Notification Center может хранить превью). В буфере обмена остаётся **полный** текст, пока вы его не замените.
+- В чувствительных полях выключите авто-вставку в настройках — текст только в буфер.
+- Подробнее (права Accessibility, ad-hoc подпись): [SECURITY.md](SECURITY.md).
 
 ## Настройки
 

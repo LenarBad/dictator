@@ -98,12 +98,22 @@ pub fn shutdown(app: &AppHandle) {
     *state.engine.lock().expect("engine") = None;
 }
 
+/// Deletes the temp WAV when dropped (normal return, error, or unwind).
+struct TempWav(PathBuf);
+
+impl Drop for TempWav {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
+    let wav = TempWav(path);
     let settings = app.state::<AppState>().settings.lock().expect("settings").clone();
     let focus = app.state::<AppState>().focus.lock().expect("focus").clone();
     let result = (|| {
         let duration = {
-            let reader = hound::WavReader::open(&path).map_err(|err| err.to_string())?;
+            let reader = hound::WavReader::open(&wav.0).map_err(|err| err.to_string())?;
             reader.duration() as f64 / f64::from(reader.spec().sample_rate.max(1))
         };
         if duration < MIN_UTTERANCE_SECONDS {
@@ -115,7 +125,7 @@ fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
             let state = app.state::<AppState>();
             let mut slot = state.engine.lock().expect("engine");
             let engine = slot.as_mut().ok_or("STT engine missing")?;
-            engine.transcribe(&path)?
+            engine.transcribe(&wav.0)?
         };
         let text = text.trim().to_string();
         if text.is_empty() {
@@ -156,7 +166,7 @@ fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
             .lock()
             .expect("engine_error") = Some(err);
     }
-    let _ = std::fs::remove_file(&path);
+    drop(wav);
     set_status(app, AppStatus::Idle);
 }
 
