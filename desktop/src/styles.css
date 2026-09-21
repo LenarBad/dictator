@@ -37,6 +37,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   background: transparent;
 }
@@ -253,6 +257,7 @@ body[data-status="transcribing"] .status-pip {
   border-bottom: 0.5px solid var(--sep);
 }
 
+.row.solo,
 .row:last-child {
   border-bottom: none;
 }
@@ -435,7 +440,8 @@ select {
 }
 
 .form-status {
-  min-height: 0;
+  min-height: 16px;
+  margin: 0 4px;
   font-size: 12px;
   color: var(--ok);
 }

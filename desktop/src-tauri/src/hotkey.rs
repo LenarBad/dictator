@@ -7,7 +7,11 @@ pub fn parse_hotkey(combo: &str) -> Result<Shortcut, String> {
     }
     let mut modifiers = Modifiers::empty();
     let mut key: Option<Code> = None;
-    for part in raw.split('+').map(str::trim).filter(|part| !part.is_empty()) {
+    for part in raw
+        .split('+')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
         let token = part.trim_matches(|c| c == '<' || c == '>');
         match token {
             "ctrl" | "control" => modifiers |= Modifiers::CONTROL,
@@ -122,6 +126,30 @@ mod tests {
     #[test]
     fn parse_ctrl_shift_d() {
         let shortcut = parse_hotkey("ctrl+shift+d").expect("parse");
-        assert_eq!(shortcut, Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyD));
+        assert_eq!(
+            shortcut,
+            Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyD)
+        );
+    }
+
+    #[test]
+    fn parse_cmd_shift_letter() {
+        let shortcut = parse_hotkey("cmd+shift+s").expect("parse");
+        assert_eq!(
+            shortcut,
+            Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyS)
+        );
+    }
+
+    #[test]
+    fn parse_function_and_digit_keys() {
+        assert_eq!(
+            parse_hotkey("ctrl+f12").expect("parse"),
+            Shortcut::new(Some(Modifiers::CONTROL), Code::F12)
+        );
+        assert_eq!(
+            parse_hotkey("alt+shift+1").expect("parse"),
+            Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::Digit1)
+        );
     }
 }

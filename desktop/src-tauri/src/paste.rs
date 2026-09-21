@@ -30,7 +30,9 @@ pub fn deliver_text(
             .write_text(text)
             .map_err(|err| err.to_string())?;
         if paste {
-            return Err("paste is only wired on macOS in this build; text is on the clipboard".into());
+            return Err(
+                "paste is only wired on macOS in this build; text is on the clipboard".into(),
+            );
         }
         Ok(())
     }

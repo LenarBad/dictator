@@ -67,9 +67,10 @@ impl Settings {
     /// following macOS system default (often a Bluetooth headset).
     pub fn apply_microphone_preference(&mut self, names: &[String]) -> Option<String> {
         let chosen = crate::recorder::preferred_microphone(names, self.microphone_name.as_deref());
-        let saved_missing = self.microphone_name.as_ref().is_some_and(|saved| {
-            !names.is_empty() && !names.iter().any(|name| name == saved)
-        });
+        let saved_missing = self
+            .microphone_name
+            .as_ref()
+            .is_some_and(|saved| !names.is_empty() && !names.iter().any(|name| name == saved));
         if (self.microphone_name.is_none() || saved_missing) && self.microphone_name != chosen {
             self.microphone_name = chosen.clone();
             let _ = self.save();

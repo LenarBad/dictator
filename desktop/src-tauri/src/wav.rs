@@ -181,6 +181,8 @@ mod tests {
         let samples = vec![0.1_f32; SAMPLE_RATE as usize * 50];
         let chunks = split_for_asr(&samples, SAMPLE_RATE);
         assert!(chunks.len() >= 3, "{}", chunks.len());
-        assert!(chunks.iter().all(|chunk| chunk.len() <= SAMPLE_RATE as usize * 20 + 1));
+        assert!(chunks
+            .iter()
+            .all(|chunk| chunk.len() <= SAMPLE_RATE as usize * 20 + 1));
     }
 }

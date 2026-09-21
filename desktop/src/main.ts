@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { comboFromKeyboardEvent, formatHotkey, modifierTokens } from "./format.ts";
 
 type AppStatus = "idle" | "recording" | "transcribing";
 
@@ -27,6 +29,7 @@ type UiState = {
   engine_error: string | null;
   microphones: MicrophoneInfo[];
   accessibility_trusted: boolean;
+  microphone_trusted: boolean;
 };
 
 const STATUS_LABEL: Record<AppStatus, string> = {
@@ -41,20 +44,11 @@ const TOGGLE_LABEL: Record<AppStatus, string> = {
   transcribing: "Распознаём…",
 };
 
-const MOD_GLYPHS: Record<string, string> = {
-  ctrl: "⌃",
-  control: "⌃",
-  shift: "⇧",
-  alt: "⌥",
-  option: "⌥",
-  cmd: "⌘",
-  command: "⌘",
-  meta: "⌘",
-  super: "⌘",
-  space: "Space",
-};
-
 let capturingHotkey = false;
+let saveTimer: number | undefined;
+let toastTimer: number | undefined;
+let persistInFlight = false;
+let persistQueued = false;
 
 function $(selector: string): Element | null {
   return document.querySelector(selector);
@@ -65,24 +59,6 @@ function setText(selector: string, value: string) {
   if (el) el.textContent = value;
 }
 
-function formatHotkey(combo: string): string {
-  if (!combo.trim()) return "—";
-  return combo
-    .split("+")
-    .map((part) => {
-      const token = part.trim().toLowerCase();
-      return MOD_GLYPHS[token] ?? token.toUpperCase();
-    })
-    .join("");
-}
-
-function keyToken(event: KeyboardEvent): string | null {
-  if (event.key === " ") return "space";
-  if (/^f\d{1,2}$/i.test(event.key)) return event.key.toLowerCase();
-  if (event.key.length === 1 && /[a-z0-9]/i.test(event.key)) return event.key.toLowerCase();
-  return null;
-}
-
 function setCapturing(active: boolean) {
   capturingHotkey = active;
   const button = document.querySelector<HTMLButtonElement>("#hotkey-display");
@@ -90,10 +66,37 @@ function setCapturing(active: boolean) {
   button.classList.toggle("capturing", active);
   if (active) {
     button.textContent = "Нажмите…";
+    button.focus();
   } else {
     const value = document.querySelector<HTMLInputElement>("#hotkey")?.value ?? "";
     button.textContent = formatHotkey(value);
   }
+}
+
+async function startHotkeyCapture() {
+  setCapturing(true);
+  try {
+    await invoke("pause_hotkey");
+  } catch {
+    /* preview */
+  }
+}
+
+async function cancelHotkeyCapture() {
+  if (!capturingHotkey) return;
+  setCapturing(false);
+  try {
+    await invoke("resume_hotkey");
+  } catch {
+    /* preview */
+  }
+}
+
+function paintCapturePreview(event: KeyboardEvent) {
+  const button = document.querySelector<HTMLButtonElement>("#hotkey-display");
+  if (!button) return;
+  const mods = modifierTokens(event);
+  button.textContent = mods.length > 0 ? formatHotkey(mods.join("+")) : "Нажмите…";
 }
 
 function micOptionLabel(mic: MicrophoneInfo): string {
@@ -166,6 +169,41 @@ function applyEngine(state: Pick<UiState, "engine_ready" | "engine_error">) {
   setText("#engine-line", engine);
 }
 
+function applyPermissions(state: Pick<UiState, "accessibility_trusted" | "microphone_trusted">) {
+  const section = document.querySelector<HTMLElement>("#permissions");
+  const micRow = document.querySelector<HTMLElement>("#perm-mic");
+  const axRow = document.querySelector<HTMLElement>("#perm-ax");
+  const micDot = document.querySelector<HTMLElement>("#mic-dot");
+  const axDot = document.querySelector<HTMLElement>("#ax-dot");
+  const micOk = state.microphone_trusted;
+  const axOk = state.accessibility_trusted;
+
+  if (micOk) {
+    setText("#mic-status", "Выдан Dictator");
+    micDot?.setAttribute("data-state", "ok");
+  } else {
+    setText("#mic-status", "Нужен, чтобы писать голос");
+    micDot?.setAttribute("data-state", "info");
+  }
+  if (axOk) {
+    setText("#ax-status", "Выдан Dictator");
+    axDot?.setAttribute("data-state", "ok");
+  } else {
+    setText("#ax-status", "Добавьте Dictator в системных настройках");
+    axDot?.setAttribute("data-state", "warn");
+  }
+
+  if (section) section.hidden = micOk && axOk;
+  if (micRow) {
+    micRow.hidden = micOk;
+    micRow.classList.toggle("solo", !micOk && axOk);
+  }
+  if (axRow) {
+    axRow.hidden = axOk;
+    axRow.classList.toggle("solo", !axOk && micOk);
+  }
+}
+
 function fillForm(state: UiState) {
   const hotkey = document.querySelector<HTMLInputElement>("#hotkey");
   const paste = document.querySelector<HTMLInputElement>("#paste_enabled");
@@ -178,14 +216,7 @@ function fillForm(state: UiState) {
   if (limit) limit.value = String(state.settings.max_recording_seconds);
   fillMicrophones(state);
   setText("#settings-path", state.settings_path);
-  const axDot = document.querySelector<HTMLElement>("#ax-dot");
-  if (state.accessibility_trusted) {
-    setText("#ax-status", "Выдан Dictator");
-    axDot?.setAttribute("data-state", "ok");
-  } else {
-    setText("#ax-status", "Добавьте Dictator в системных настройках");
-    axDot?.setAttribute("data-state", "warn");
-  }
+  applyPermissions(state);
   applyEngine(state);
   applyStatus(state.status, state.status_label, state.settings.hotkey);
 }
@@ -211,9 +242,60 @@ function readForm(): Settings {
 function showFormStatus(message: string, error = false) {
   const el = document.querySelector<HTMLElement>("#form-status");
   if (!el) return;
+  window.clearTimeout(toastTimer);
   el.hidden = !message;
   el.classList.toggle("error", error);
   el.textContent = message;
+  if (message && !error) {
+    toastTimer = window.setTimeout(() => {
+      el.hidden = true;
+    }, 1600);
+  }
+}
+
+function queueSave() {
+  if (capturingHotkey) return;
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    void persist();
+  }, 280);
+}
+
+async function persist() {
+  if (capturingHotkey) return;
+  if (persistInFlight) {
+    persistQueued = true;
+    return;
+  }
+  persistInFlight = true;
+  try {
+    const saved = await invoke<Settings>("save_settings", { settings: readForm() });
+    const hotkey = document.querySelector<HTMLInputElement>("#hotkey");
+    if (hotkey) hotkey.value = saved.hotkey;
+    if (!capturingHotkey) {
+      setText("#hotkey-display", formatHotkey(saved.hotkey));
+    }
+    applyStatus(
+      (document.body.dataset.status as AppStatus) ?? "idle",
+      document.querySelector("#status-line")?.textContent || STATUS_LABEL.idle,
+      saved.hotkey,
+    );
+    showFormStatus("Сохранено");
+  } catch (error) {
+    showFormStatus(String(error), true);
+    try {
+      await invoke("resume_hotkey");
+      await reload();
+    } catch {
+      /* preview */
+    }
+  } finally {
+    persistInFlight = false;
+    if (persistQueued) {
+      persistQueued = false;
+      void persist();
+    }
+  }
 }
 
 async function reload() {
@@ -221,43 +303,57 @@ async function reload() {
   fillForm(state);
 }
 
+async function refreshPermissions() {
+  try {
+    const state = await invoke<UiState>("get_state");
+    applyPermissions(state);
+    applyEngine(state);
+  } catch {
+    /* preview */
+  }
+}
+
+function previewState(): UiState {
+  return {
+    status: "idle",
+    status_label: "Ожидание",
+    settings: {
+      hotkey: "ctrl+shift+d",
+      paste_enabled: true,
+      microphone_name: "MacBook Pro Microphone",
+      model_name: "v3_e2e_rnnt",
+      preload_model: true,
+      max_recording_seconds: 180,
+    },
+    settings_path: "~/Library/Application Support/dictator/settings.json",
+    recording_wired: true,
+    engine_ready: true,
+    engine_error: null,
+    microphones: [
+      { name: "MacBook Pro Microphone", kind: "builtin" },
+      { name: "AirPods Pro", kind: "bluetooth" },
+    ],
+    accessibility_trusted: false,
+    microphone_trusted: false,
+  };
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
   try {
     await reload();
   } catch {
-    fillForm({
-      status: "idle",
-      status_label: "Ожидание",
-      settings: {
-        hotkey: "ctrl+shift+d",
-        paste_enabled: true,
-        microphone_name: "MacBook Pro Microphone",
-        model_name: "v3_e2e_rnnt",
-        preload_model: true,
-        max_recording_seconds: 180,
-      },
-      settings_path: "~/Library/Application Support/dictator/settings.json",
-      recording_wired: true,
-      engine_ready: true,
-      engine_error: null,
-      microphones: [
-        { name: "MacBook Pro Microphone", kind: "builtin" },
-        { name: "AirPods Pro", kind: "bluetooth" },
-      ],
-      accessibility_trusted: false,
-    });
+    fillForm(previewState());
     showFormStatus("Превью без приложения — запись и сохранение здесь не работают.", true);
   }
 
-  document.querySelector("#settings-form")?.addEventListener("submit", async (event) => {
+  document.querySelector("#settings-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    try {
-      await invoke("save_settings", { settings: readForm() });
-      showFormStatus("Сохранено. Хоткей действует сразу.");
-      await reload();
-    } catch (error) {
-      showFormStatus(String(error), true);
-    }
+    void persist();
+  });
+  document.querySelector("#settings-form")?.addEventListener("change", () => queueSave());
+  document.querySelector("#settings-form")?.addEventListener("input", (event) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.id === "max_recording_seconds") queueSave();
   });
 
   document.querySelector("#toggle")?.addEventListener("click", async () => {
@@ -272,49 +368,50 @@ window.addEventListener("DOMContentLoaded", async () => {
     void invoke("open_permission", { kind: "accessibility" });
   });
 
-  document.querySelector("#microphone_name")?.addEventListener("change", async () => {
-    updateMicHint();
-    try {
-      await invoke("save_settings", { settings: readForm() });
-      showFormStatus("Микрофон сохранён.");
-    } catch (error) {
-      showFormStatus(String(error), true);
-    }
-  });
+  document.querySelector("#microphone_name")?.addEventListener("change", updateMicHint);
 
   document.querySelector("#hotkey-display")?.addEventListener("click", (event) => {
     event.preventDefault();
-    setCapturing(true);
+    void startHotkeyCapture();
   });
 
-  window.addEventListener("keydown", (event) => {
-    if (!capturingHotkey) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.key === "Escape") {
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (!capturingHotkey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Escape") {
+        void cancelHotkeyCapture();
+        return;
+      }
+      const combo = comboFromKeyboardEvent(event);
+      if (!combo) {
+        paintCapturePreview(event);
+        return;
+      }
+      const hidden = document.querySelector<HTMLInputElement>("#hotkey");
+      if (hidden) hidden.value = combo;
       setCapturing(false);
-      return;
-    }
-    const token = keyToken(event);
-    if (!token) return;
-    const parts: string[] = [];
-    if (event.ctrlKey) parts.push("ctrl");
-    if (event.altKey) parts.push("alt");
-    if (event.shiftKey) parts.push("shift");
-    if (event.metaKey) parts.push("cmd");
-    if (parts.length === 0) return;
-    parts.push(token);
-    const combo = parts.join("+");
-    const hidden = document.querySelector<HTMLInputElement>("#hotkey");
-    if (hidden) hidden.value = combo;
-    setCapturing(false);
-  });
+      void persist();
+    },
+    true,
+  );
+
+  window.addEventListener(
+    "keyup",
+    (event) => {
+      if (!capturingHotkey) return;
+      paintCapturePreview(event);
+    },
+    true,
+  );
 
   window.addEventListener("mousedown", (event) => {
     if (!capturingHotkey) return;
     const button = document.querySelector("#hotkey-display");
     if (button && !button.contains(event.target as Node)) {
-      setCapturing(false);
+      void cancelHotkeyCapture();
     }
   });
 
@@ -324,9 +421,19 @@ window.addEventListener("DOMContentLoaded", async () => {
     try {
       const state = await invoke<UiState>("get_state");
       applyEngine(state);
+      applyPermissions(state);
       applyStatus(state.status, state.status_label, state.settings.hotkey);
     } catch {
       /* settings window may be hidden */
     }
   });
+
+  try {
+    await getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+      if (focused) void refreshPermissions();
+      else void cancelHotkeyCapture();
+    });
+  } catch {
+    /* browser preview */
+  }
 });

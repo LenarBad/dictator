@@ -2,9 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use sherpa_onnx::{
-    OfflineRecognizer, OfflineRecognizerConfig, OfflineTransducerModelConfig,
-};
+use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig, OfflineTransducerModelConfig};
 
 use crate::wav::{self, SAMPLE_RATE};
 
@@ -202,8 +200,8 @@ mod tests {
 
     #[test]
     fn transcribes_official_example_when_model_present() {
-        let wav = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/gigaam-example.wav");
+        let wav =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/gigaam-example.wav");
         if !wav.is_file() || resolve_model_dir().is_err() {
             return;
         }

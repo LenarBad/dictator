@@ -37,7 +37,9 @@ pub fn start_recording(app: &AppHandle) -> Result<AppStatus, String> {
             );
             *state.focus.lock().expect("focus") = Some(target);
         } else {
-            eprintln!("dictator: no focus target at recording start; will Cmd+V into current focus");
+            eprintln!(
+                "dictator: no focus target at recording start; will Cmd+V into current focus"
+            );
         }
     }
     let device = {
@@ -67,13 +69,20 @@ pub fn start_recording(app: &AppHandle) -> Result<AppStatus, String> {
         "Dictator",
         "Запись… Нажмите хоткей или пункт меню, чтобы остановить.",
     );
+    crate::hud::spawn_ticker(app.clone(), generation);
     spawn_limit_watch(app.clone(), generation);
     Ok(AppStatus::Recording)
 }
 
 pub fn stop_and_transcribe(app: &AppHandle) -> AppStatus {
     set_status(app, AppStatus::Transcribing);
-    let path = match app.state::<AppState>().recorder.lock().expect("recorder").stop() {
+    let path = match app
+        .state::<AppState>()
+        .recorder
+        .lock()
+        .expect("recorder")
+        .stop()
+    {
         Ok(path) => path,
         Err(err) => {
             crate::notify::show("Dictator", &format!("Не удалось остановить запись: {err}"));
@@ -109,7 +118,12 @@ impl Drop for TempWav {
 
 fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
     let wav = TempWav(path);
-    let settings = app.state::<AppState>().settings.lock().expect("settings").clone();
+    let settings = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .expect("settings")
+        .clone();
     let focus = app.state::<AppState>().focus.lock().expect("focus").clone();
     let result = (|| {
         let duration = {
@@ -142,7 +156,10 @@ fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
             #[cfg(target_os = "macos")]
             {
                 if crate::macos::is_trusted() {
-                    crate::notify::show("Dictator", &format!("{preview}  (если не появилось — Cmd+V)"));
+                    crate::notify::show(
+                        "Dictator",
+                        &format!("{preview}  (если не появилось — Cmd+V)"),
+                    );
                 } else {
                     crate::notify::show(
                         "Dictator",
@@ -152,7 +169,10 @@ fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
             }
             #[cfg(not(target_os = "macos"))]
             {
-                crate::notify::show("Dictator", &format!("{preview}  (если не появилось — Cmd+V)"));
+                crate::notify::show(
+                    "Dictator",
+                    &format!("{preview}  (если не появилось — Cmd+V)"),
+                );
             }
         } else {
             crate::notify::show("Dictator", &format!("Скопировано: {preview}"));
@@ -194,6 +214,7 @@ fn spawn_limit_watch(app: AppHandle, generation: u64) {
 fn set_status(app: &AppHandle, status: AppStatus) {
     *app.state::<AppState>().status.lock().expect("status") = status;
     let _ = app.emit("status-changed", status);
+    crate::hud::sync(app, status);
     refresh_tray(app);
 }
 

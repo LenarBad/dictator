@@ -16,9 +16,9 @@
         "label": "settings",
         "title": "Dictator",
         "width": 420,
-        "height": 640,
+        "height": 560,
         "minWidth": 380,
-        "minHeight": 520,
+        "minHeight": 440,
         "create": false,
         "visible": true,
         "skipTaskbar": true,
@@ -29,6 +29,33 @@
         "windowEffects": {
           "effects": ["hudWindow"],
           "state": "active"
+        }
+      },
+      {
+        "label": "hud",
+        "title": "Dictator",
+        "url": "hud.html",
+        "width": 290,
+        "height": 54,
+        "create": false,
+        "visible": false,
+        "focus": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "acceptFirstMouse": true,
+        "visibleOnAllWorkspaces": true,
+        "theme": "Dark",
+        "windowEffects": {
+          "effects": ["hudWindow"],
+          "state": "active",
+          "radius": 24
         }
       }
     ],

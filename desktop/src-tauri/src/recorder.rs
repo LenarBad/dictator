@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -9,6 +10,8 @@ use serde::Serialize;
 
 const MIC_CACHE_TTL: Duration = Duration::from_secs(30);
 static MIC_CACHE: Mutex<Option<(Instant, Vec<MicrophoneInfo>)>> = Mutex::new(None);
+
+pub const HUD_BARS: usize = 17;
 
 use crate::wav::{self, SAMPLE_RATE};
 
@@ -30,6 +33,94 @@ enum RecCmd {
 
 pub struct Recorder {
     tx: Sender<RecCmd>,
+    meter: Arc<Mutex<LevelMeter>>,
+}
+
+pub struct LevelMeter {
+    bars: VecDeque<f32>,
+    hop: usize,
+    acc_n: usize,
+    acc_peak: f32,
+    acc_sumsq: f32,
+    /// Slow peak envelope so quiet laptop mics still fill the HUD.
+    peak_env: f32,
+}
+
+impl Default for LevelMeter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LevelMeter {
+    pub fn new() -> Self {
+        Self {
+            bars: std::iter::repeat(0.0).take(HUD_BARS).collect(),
+            hop: 320,
+            acc_n: 0,
+            acc_peak: 0.0,
+            acc_sumsq: 0.0,
+            peak_env: 0.08,
+        }
+    }
+
+    pub fn reset(&mut self, sample_rate: u32) {
+        self.bars.clear();
+        self.bars.extend(std::iter::repeat(0.0).take(HUD_BARS));
+        self.hop = (sample_rate as usize / 40).clamp(160, 2000);
+        self.acc_n = 0;
+        self.acc_peak = 0.0;
+        self.acc_sumsq = 0.0;
+        self.peak_env = 0.08;
+    }
+
+    pub fn push(&mut self, samples: &[f32]) {
+        for &sample in samples {
+            let amplitude = sample.abs();
+            if amplitude > self.acc_peak {
+                self.acc_peak = amplitude;
+            }
+            self.acc_sumsq += sample * sample;
+            self.acc_n += 1;
+            if self.acc_n >= self.hop {
+                self.flush();
+            }
+        }
+    }
+
+    fn flush(&mut self) {
+        let rms = (self.acc_sumsq / self.acc_n.max(1) as f32).sqrt();
+        let amp = self.acc_peak.max(rms);
+        if amp > self.peak_env {
+            self.peak_env = amp;
+        } else {
+            self.peak_env *= 0.993;
+        }
+        // Quiet built-in mics often peak around 0.02–0.05; lift them into the
+        // visualizer's useful range without clipping already-loud speech.
+        let makeup = (0.16 / self.peak_env.max(0.045)).clamp(1.0, 4.0);
+        if self.bars.len() >= HUD_BARS {
+            self.bars.pop_front();
+        }
+        self.bars
+            .push_back(visual_bar(self.acc_peak * makeup, rms * makeup));
+        self.acc_n = 0;
+        self.acc_peak = 0.0;
+        self.acc_sumsq = 0.0;
+    }
+
+    pub fn bars(&self) -> Vec<f32> {
+        self.bars.iter().copied().collect()
+    }
+}
+
+pub fn visual_bar(peak: f32, rms: f32) -> f32 {
+    let amp = (peak * 0.72 + rms * 0.28).max(1e-6);
+    let db = 20.0 * amp.log10();
+    // Speech on a laptop mic lives around −40…−12 dB. Map that onto the
+    // full HUD so the wave matches the hero pill instead of a flat line.
+    let t = ((db + 46.0) / 40.0).clamp(0.0, 1.0);
+    0.16 + 0.84 * t.powf(0.72)
 }
 
 impl Default for Recorder {
@@ -41,11 +132,13 @@ impl Default for Recorder {
 impl Recorder {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
+        let meter = Arc::new(Mutex::new(LevelMeter::new()));
+        let meter_thread = Arc::clone(&meter);
         thread::Builder::new()
             .name("dictator-mic".into())
-            .spawn(move || recorder_loop(rx))
+            .spawn(move || recorder_loop(rx, meter_thread))
             .expect("microphone thread");
-        Self { tx }
+        Self { tx, meter }
     }
 
     pub fn is_recording(&self) -> bool {
@@ -64,6 +157,13 @@ impl Recorder {
         rx.recv().unwrap_or(0.0)
     }
 
+    pub fn bars(&self) -> Vec<f32> {
+        self.meter
+            .lock()
+            .map(|meter| meter.bars())
+            .unwrap_or_else(|_| vec![0.18; HUD_BARS])
+    }
+
     pub fn start(&self, device_name: Option<&str>) -> Result<(), String> {
         let (reply, rx) = mpsc::channel();
         self.tx
@@ -72,7 +172,8 @@ impl Recorder {
                 reply,
             })
             .map_err(|_| "microphone thread exited".to_string())?;
-        rx.recv().map_err(|_| "microphone thread exited".to_string())?
+        rx.recv()
+            .map_err(|_| "microphone thread exited".to_string())?
     }
 
     pub fn stop(&self) -> Result<std::path::PathBuf, String> {
@@ -80,13 +181,15 @@ impl Recorder {
         self.tx
             .send(RecCmd::Stop { reply })
             .map_err(|_| "microphone thread exited".to_string())?;
-        rx.recv().map_err(|_| "microphone thread exited".to_string())?
+        rx.recv()
+            .map_err(|_| "microphone thread exited".to_string())?
     }
 }
 
 struct Inner {
     stream: Option<Stream>,
     samples: Arc<Mutex<Vec<f32>>>,
+    meter: Arc<Mutex<LevelMeter>>,
     capture_rate: u32,
     channels: u16,
     started_at: Option<Instant>,
@@ -98,10 +201,11 @@ impl Drop for Inner {
     }
 }
 
-fn recorder_loop(rx: mpsc::Receiver<RecCmd>) {
+fn recorder_loop(rx: mpsc::Receiver<RecCmd>, meter: Arc<Mutex<LevelMeter>>) {
     let mut inner = Inner {
         stream: None,
         samples: Arc::new(Mutex::new(Vec::new())),
+        meter,
         capture_rate: SAMPLE_RATE,
         channels: 1,
         started_at: None,
@@ -139,8 +243,16 @@ fn start_inner(inner: &mut Inner, device_name: Option<&str>) -> Result<(), Strin
     inner.capture_rate = config.sample_rate().0;
     inner.channels = config.channels();
     inner.samples.lock().expect("samples").clear();
-    let stream = build_stream(&device, &config, Arc::clone(&inner.samples))?;
-    stream.play().map_err(|err| format!("microphone start: {err}"))?;
+    inner.meter.lock().expect("meter").reset(inner.capture_rate);
+    let stream = build_stream(
+        &device,
+        &config,
+        Arc::clone(&inner.samples),
+        Arc::clone(&inner.meter),
+    )?;
+    stream
+        .play()
+        .map_err(|err| format!("microphone start: {err}"))?;
     inner.stream = Some(stream);
     inner.started_at = Some(Instant::now());
     Ok(())
@@ -148,7 +260,6 @@ fn start_inner(inner: &mut Inner, device_name: Option<&str>) -> Result<(), Strin
 
 fn stop_inner(inner: &mut Inner) -> Result<std::path::PathBuf, String> {
     release_stream(inner);
-    inner.started_at = None;
     let captured = {
         let mut samples = inner.samples.lock().expect("samples");
         std::mem::take(&mut *samples)
@@ -213,10 +324,13 @@ pub fn list_microphones() -> Vec<MicrophoneInfo> {
         .into_iter()
         .map(|name| {
             let kind = classify_microphone(&name);
-            (kind, MicrophoneInfo {
-                kind: kind.as_str().to_string(),
-                name,
-            })
+            (
+                kind,
+                MicrophoneInfo {
+                    kind: kind.as_str().to_string(),
+                    name,
+                },
+            )
         })
         .collect::<Vec<_>>();
     list.sort_by_key(|(kind, _)| kind.sort_key());
@@ -374,6 +488,7 @@ fn build_stream(
     device: &cpal::Device,
     config: &SupportedStreamConfig,
     sink: Arc<Mutex<Vec<f32>>>,
+    meter: Arc<Mutex<LevelMeter>>,
 ) -> Result<Stream, String> {
     let channels = config.channels();
     let err_fn = |err| eprintln!("dictator: microphone stream error: {err}");
@@ -381,7 +496,7 @@ fn build_stream(
     let stream = match config.sample_format() {
         SampleFormat::F32 => device.build_input_stream(
             &stream_config,
-            move |data: &[f32], _| append_samples(data, channels, &sink),
+            move |data: &[f32], _| append_samples(data, channels, &sink, &meter),
             err_fn,
             None,
         ),
@@ -389,7 +504,7 @@ fn build_stream(
             &stream_config,
             move |data: &[i16], _| {
                 let converted: Vec<f32> = data.iter().map(|s| *s as f32 / 32768.0).collect();
-                append_samples(&converted, channels, &sink);
+                append_samples(&converted, channels, &sink, &meter);
             },
             err_fn,
             None,
@@ -397,8 +512,9 @@ fn build_stream(
         SampleFormat::I32 => device.build_input_stream(
             &stream_config,
             move |data: &[i32], _| {
-                let converted: Vec<f32> = data.iter().map(|s| *s as f32 / 2_147_483_648.0).collect();
-                append_samples(&converted, channels, &sink);
+                let converted: Vec<f32> =
+                    data.iter().map(|s| *s as f32 / 2_147_483_648.0).collect();
+                append_samples(&converted, channels, &sink, &meter);
             },
             err_fn,
             None,
@@ -408,16 +524,28 @@ fn build_stream(
     stream.map_err(|err| format!("microphone stream: {err}"))
 }
 
-fn append_samples(input: &[f32], channels: u16, sink: &Arc<Mutex<Vec<f32>>>) {
-    let mut samples = sink.lock().expect("samples");
+fn append_samples(
+    input: &[f32],
+    channels: u16,
+    sink: &Arc<Mutex<Vec<f32>>>,
+    meter: &Arc<Mutex<LevelMeter>>,
+) {
     if channels <= 1 {
-        samples.extend_from_slice(input);
+        if let Ok(mut meter) = meter.lock() {
+            meter.push(input);
+        }
+        sink.lock().expect("samples").extend_from_slice(input);
         return;
     }
     let channels = channels as usize;
+    let mut mono = Vec::with_capacity(input.len() / channels.max(1));
     for frame in input.chunks(channels) {
-        samples.push(frame.iter().sum::<f32>() / frame.len() as f32);
+        mono.push(frame.iter().sum::<f32>() / frame.len() as f32);
     }
+    if let Ok(mut meter) = meter.lock() {
+        meter.push(&mono);
+    }
+    sink.lock().expect("samples").extend_from_slice(&mono);
 }
 
 fn unique_wav_path() -> std::path::PathBuf {
@@ -478,5 +606,45 @@ mod tests {
             preferred_microphone(&[], Some("MacBook Pro Microphone")).as_deref(),
             Some("MacBook Pro Microphone")
         );
+    }
+
+    #[test]
+    fn visual_bar_stays_in_unit_range() {
+        assert!(visual_bar(0.0, 0.0) >= 0.16);
+        assert!(visual_bar(1.0, 1.0) <= 1.0);
+        assert!(visual_bar(0.3, 0.15) > visual_bar(0.05, 0.02));
+    }
+
+    #[test]
+    fn quiet_laptop_speech_is_not_a_flat_line() {
+        let silence = visual_bar(0.0, 0.0);
+        let quiet = visual_bar(0.04, 0.015);
+        let loud = visual_bar(0.25, 0.1);
+        assert!(quiet > silence + 0.15);
+        assert!(loud > quiet + 0.12);
+        assert!(loud <= 1.0);
+    }
+
+    #[test]
+    fn meter_fills_a_full_window_of_bars() {
+        let mut meter = LevelMeter::new();
+        meter.reset(16_000);
+        let hop = meter.hop;
+        meter.push(&vec![0.4; hop * HUD_BARS]);
+        let bars = meter.bars();
+        assert_eq!(bars.len(), HUD_BARS);
+        assert!(bars.iter().all(|value| *value > 0.2));
+    }
+
+    #[test]
+    fn quiet_meter_still_reaches_visible_heights() {
+        let mut meter = LevelMeter::new();
+        meter.reset(16_000);
+        let hop = meter.hop;
+        meter.push(&vec![0.035; hop * HUD_BARS * 2]);
+        let bars = meter.bars();
+        assert_eq!(bars.len(), HUD_BARS);
+        let mean = bars.iter().sum::<f32>() / bars.len() as f32;
+        assert!(mean > 0.4, "mean {mean} should look like a speaking wave");
     }
 }

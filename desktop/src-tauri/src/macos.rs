@@ -2,6 +2,7 @@
 
 #![cfg(target_os = "macos")]
 
+use std::ffi::CStr;
 use std::fs;
 use std::ptr;
 use std::thread;
@@ -21,7 +22,8 @@ use objc2_foundation::{NSArray, NSString};
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn AXIsProcessTrusted() -> bool;
-    fn AXIsProcessTrustedWithOptions(options: core_foundation::dictionary::CFDictionaryRef) -> bool;
+    fn AXIsProcessTrustedWithOptions(options: core_foundation::dictionary::CFDictionaryRef)
+        -> bool;
     fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
@@ -35,8 +37,30 @@ extern "C" {
     ) -> i32;
 }
 
+#[link(name = "AVFoundation", kind = "framework")]
+extern "C" {}
+
 pub fn is_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
+}
+
+/// `AVAuthorizationStatusAuthorized` (3). NotDetermined/Denied keep the settings row visible.
+pub fn microphone_trusted() -> bool {
+    microphone_auth_status() == 3
+}
+
+fn microphone_auth_status() -> isize {
+    unsafe {
+        let Some(cls) = objc2::runtime::AnyClass::get(cstr(b"AVCaptureDevice\0")) else {
+            return 0;
+        };
+        let media = NSString::from_str("soun");
+        objc2::msg_send![cls, authorizationStatusForMediaType: &*media]
+    }
+}
+
+fn cstr(bytes: &'static [u8]) -> &'static CStr {
+    CStr::from_bytes_with_nul(bytes).expect("C string")
 }
 
 pub fn prompt_if_needed() {
@@ -217,9 +241,10 @@ fn is_browser_like(bundle: &str) -> bool {
 pub fn write_clipboard_text(text: &str) -> Result<(), String> {
     let pasteboard = NSPasteboard::generalPasteboard();
     pasteboard.clearContents();
-    let objects = NSArray::from_retained_slice(&[ProtocolObject::<dyn NSPasteboardWriting>::from_retained(
-        NSString::from_str(text),
-    )]);
+    let objects =
+        NSArray::from_retained_slice(&[ProtocolObject::<dyn NSPasteboardWriting>::from_retained(
+            NSString::from_str(text),
+        )]);
     if !pasteboard.writeObjects(&objects) {
         write_note("NSPasteboard writeObjects failed");
         return Err("NSPasteboard writeObjects failed".into());
@@ -253,7 +278,8 @@ fn ax_insert_text(pid: i32, text: &str) -> Result<(), String> {
         }
         let focused_attr = CFString::new("AXFocusedUIElement");
         let mut focused: CFTypeRef = ptr::null();
-        let err = AXUIElementCopyAttributeValue(app, focused_attr.as_concrete_TypeRef(), &mut focused);
+        let err =
+            AXUIElementCopyAttributeValue(app, focused_attr.as_concrete_TypeRef(), &mut focused);
         if err != 0 || focused.is_null() {
             CFRelease(app.cast());
             return Err(format!("no focused UI element (ax={err})"));

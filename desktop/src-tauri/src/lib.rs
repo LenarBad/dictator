@@ -1,4 +1,5 @@
 mod hotkey;
+mod hud;
 #[cfg(target_os = "macos")]
 mod macos;
 mod notify;
@@ -70,13 +71,18 @@ struct UiState {
     engine_error: Option<String>,
     microphones: Vec<recorder::MicrophoneInfo>,
     accessibility_trusted: bool,
+    microphone_trusted: bool,
 }
 
 #[tauri::command]
 fn get_state(app: AppHandle) -> UiState {
     let state = app.state::<AppState>();
     let status = *state.status.lock().expect("status");
-    let engine_ready = state.engine.try_lock().ok().is_some_and(|slot| slot.is_some());
+    let engine_ready = state
+        .engine
+        .try_lock()
+        .ok()
+        .is_some_and(|slot| slot.is_some());
     let engine_error = state.engine_error.lock().expect("engine_error").clone();
     let microphones = recorder::list_microphones();
     let names: Vec<String> = microphones.iter().map(|mic| mic.name.clone()).collect();
@@ -95,6 +101,7 @@ fn get_state(app: AppHandle) -> UiState {
         engine_error,
         microphones,
         accessibility_trusted: accessibility_trusted(),
+        microphone_trusted: microphone_trusted(),
     }
 }
 
@@ -110,11 +117,31 @@ fn save_settings(app: AppHandle, settings: Settings) -> Result<Settings, String>
         );
     }
     next.model_name = crate::settings::DEFAULT_MODEL.to_string();
+    if let Err(err) = register_current_hotkey(&app, &next.hotkey) {
+        restore_saved_hotkey(&app);
+        return Err(err);
+    }
     next.save()?;
-    register_current_hotkey(&app, &next.hotkey)?;
     *app.state::<AppState>().settings.lock().expect("settings") = next.clone();
     refresh_tray(&app);
     Ok(next)
+}
+
+#[tauri::command]
+fn pause_hotkey(app: AppHandle) -> Result<(), String> {
+    app.global_shortcut()
+        .unregister_all()
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn resume_hotkey(app: AppHandle) -> Result<(), String> {
+    restore_saved_hotkey(&app)
+}
+
+#[tauri::command]
+fn hud_snapshot(app: AppHandle) -> crate::hud::HudFrame {
+    crate::hud::snapshot(&app)
 }
 
 #[tauri::command]
@@ -155,14 +182,30 @@ pub fn run() {
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 crate::macos::prompt_if_needed();
             }
+            crate::hud::prefetch(app.handle());
             Ok(())
         })
         .on_window_event(|window, event| {
+            if window.label() == crate::hud::HUD_LABEL {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                return;
+            }
             if window.label() != "settings" {
                 return;
             }
             match event {
                 tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed => {
+                    let app = window.app_handle().clone();
+                    let _ = thread::Builder::new()
+                        .name("dictator-hotkey-restore".into())
+                        .spawn(move || {
+                            if let Err(err) = restore_saved_hotkey(&app) {
+                                eprintln!("dictator: failed to restore hotkey: {err}");
+                            }
+                        });
                     #[cfg(target_os = "macos")]
                     {
                         let _ = window
@@ -176,8 +219,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_state,
             save_settings,
+            hud_snapshot,
             toggle_recording,
-            open_permission
+            open_permission,
+            pause_hotkey,
+            resume_hotkey
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -235,13 +281,28 @@ fn run_toggle_on_main(app: &AppHandle) -> Result<AppStatus, String> {
         let _ = tx.send(toggle_recording_inner(&handle));
     })
     .map_err(|err| err.to_string())?;
-    rx.recv().map_err(|_| "main thread dropped toggle".to_string())?
+    rx.recv()
+        .map_err(|_| "main thread dropped toggle".to_string())?
+}
+
+fn restore_saved_hotkey(app: &AppHandle) -> Result<(), String> {
+    let combo = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .expect("settings")
+        .hotkey
+        .clone();
+    register_current_hotkey(app, &combo)
 }
 
 fn register_current_hotkey(app: &AppHandle, combo: &str) -> Result<(), String> {
     let shortcut = parse_hotkey(combo)?;
     let manager = app.global_shortcut();
-    let _ = manager.unregister_all();
+    if manager.is_registered(shortcut) {
+        return Ok(());
+    }
+    manager.unregister_all().map_err(|err| err.to_string())?;
     manager.register(shortcut).map_err(|err| err.to_string())
 }
 
@@ -282,11 +343,15 @@ fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         })
         .build(app)?;
 
-    app.state::<AppState>().tray.lock().expect("tray").replace(TrayItems {
-        status,
-        hotkey,
-        toggle,
-    });
+    app.state::<AppState>()
+        .tray
+        .lock()
+        .expect("tray")
+        .replace(TrayItems {
+            status,
+            hotkey,
+            toggle,
+        });
     Ok(())
 }
 
@@ -322,7 +387,9 @@ fn refresh_tray_on_main(app: &AppHandle) {
     let status = *state.status.lock().expect("status");
     let hotkey = state.settings.lock().expect("settings").hotkey.clone();
     if let Some(items) = state.tray.lock().expect("tray").as_ref() {
-        let _ = items.status.set_text(format!("Статус: {}", status.label_ru()));
+        let _ = items
+            .status
+            .set_text(format!("Статус: {}", status.label_ru()));
         let _ = items.hotkey.set_text(format!("Хоткей: {hotkey}"));
         let toggle_label = if status == AppStatus::Recording {
             "Остановить запись"
@@ -333,14 +400,9 @@ fn refresh_tray_on_main(app: &AppHandle) {
         let _ = items.toggle.set_enabled(status != AppStatus::Transcribing);
     }
     if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_tooltip(Some(format!(
-            "Dictator — {} ({hotkey})",
-            status.label_ru()
-        )));
-        let _ = tray.set_icon_with_as_template(
-            Some(tray_image(status)),
-            matches!(status, AppStatus::Idle),
-        );
+        let _ = tray.set_tooltip(Some(format!("Dictator — {} ({hotkey})", status.label_ru())));
+        let _ = tray
+            .set_icon_with_as_template(Some(tray_image(status)), matches!(status, AppStatus::Idle));
     }
 }
 
@@ -412,7 +474,9 @@ fn open_permission_inner(kind: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         let url = match kind {
-            "microphone" => "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+            "microphone" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+            }
             "accessibility" => {
                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
             }
@@ -440,6 +504,17 @@ fn open_permission_inner(kind: &str) -> Result<(), String> {
     {
         let _ = kind;
         Err("opening system settings is not wired on this OS yet".into())
+    }
+}
+
+fn microphone_trusted() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        crate::macos::microphone_trusted()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
     }
 }
 

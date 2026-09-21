@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ru" style="background: transparent">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/hud.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Dictator</title>
+    <script type="module" src="/src/hud.ts" defer></script>
+  </head>
+  <body data-status="recording" style="background: transparent">
+    <button type="button" id="pill" aria-label="Остановить запись">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="wave" id="wave" aria-hidden="true"></span>
+      <span class="time" id="time">0:00</span>
+      <span class="hint" id="hint">⌃⇧D · стоп</span>
+    </button>
+  </body>
+</html>

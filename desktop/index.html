@@ -86,21 +86,20 @@
         </section>
 
         <p id="form-status" class="form-status" hidden></p>
-        <button type="submit" class="primary">Сохранить</button>
       </form>
 
-      <section>
+      <section id="permissions">
         <h2>Разрешения</h2>
         <div class="group">
-          <div class="row perm">
-            <span class="perm-dot" data-state="info" aria-hidden="true"></span>
+          <div class="row perm" id="perm-mic">
+            <span id="mic-dot" class="perm-dot" data-state="info" aria-hidden="true"></span>
             <div class="row-copy">
               <p class="row-title">Микрофон</p>
-              <p class="hint">Нужен, чтобы писать голос</p>
+              <p id="mic-status" class="hint">Нужен, чтобы писать голос</p>
             </div>
             <button type="button" id="open-mic" class="ghost">Открыть</button>
           </div>
-          <div class="row perm">
+          <div class="row perm" id="perm-ax">
             <span id="ax-dot" class="perm-dot" data-state="unknown" aria-hidden="true"></span>
             <div class="row-copy">
               <p class="row-title">Универсальный доступ</p>
@@ -110,8 +109,8 @@
           </div>
         </div>
         <p class="footnote">В списке должен быть <strong>Dictator</strong>, не Terminal.</p>
-        <p id="settings-path" class="path"></p>
       </section>
+      <p id="settings-path" class="path"></p>
     </main>
   </body>
 </html>
