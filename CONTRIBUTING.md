@@ -4,7 +4,7 @@ Dictator is offline Russian dictation for the Mac menu bar (Tauri 2 + local Giga
 
 ## Before you open a PR
 
-1. Read [docs/INSTALL.md](docs/INSTALL.md) (build-from-source section).
+1. Read [docs/BUILD.md](docs/BUILD.md) (or the short command list in [desktop/README.md](desktop/README.md)).
 2. Fetch the STT model: `bash scripts/fetch-stt-model.sh` (SHA-256 is verified).
 3. From `desktop/`: `npm ci` and run what you changed (`npm run tauri dev` or tests).
 

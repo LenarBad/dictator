@@ -1,6 +1,6 @@
 # Dictator desktop (Tauri 2)
 
-Только macOS. Если вы не разработчик — установка в корневом [README](../README.md) и в [docs/INSTALL.md](../docs/INSTALL.md).
+Только macOS. Если вы не разработчик — установка в корневом [README](../README.md) и в [docs/INSTALL.md](../docs/INSTALL.md). Сборка с нуля (Homebrew, Node, Rust): [docs/BUILD.md](../docs/BUILD.md).
 
 Ежедневный путь — **`/Applications/Dictator.app`**: tray, глобальный хоткей, запись WAV, вставка.
 GigaAM-v3 e2e RNNT работает внутри того же бинаря через sherpa-onnx.
