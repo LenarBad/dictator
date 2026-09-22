@@ -23,7 +23,6 @@ type UiState = {
   status: AppStatus;
   status_label: string;
   settings: Settings;
-  settings_path: string;
   recording_wired: boolean;
   engine_ready: boolean;
   engine_error: string | null;
@@ -217,7 +216,6 @@ function fillForm(state: UiState) {
   if (limit) limit.value = String(state.settings.max_recording_seconds);
   fillMicrophones(state);
   setText("#app-version", state.app_version);
-  setText("#settings-path", state.settings_path);
   applyPermissions(state);
   applyEngine(state);
   applyStatus(state.status, state.status_label, state.settings.hotkey);
@@ -327,7 +325,6 @@ function previewState(): UiState {
       preload_model: true,
       max_recording_seconds: 180,
     },
-    settings_path: "~/Library/Application Support/dictator/settings.json",
     recording_wired: true,
     engine_ready: true,
     engine_error: null,
