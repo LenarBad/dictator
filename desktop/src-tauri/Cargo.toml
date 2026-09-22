@@ -1,6 +1,6 @@
 [package]
 name = "dictator-desktop"
-version = "0.3.0"
+version = "0.3.1"
 description = "Dictator desktop shell (tray, hotkey, settings)"
 authors = ["LenarBad"]
 edition = "2021"
