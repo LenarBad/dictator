@@ -97,14 +97,30 @@ else
   exit 1
 fi
 
-ARCHIVE_ROOT="${OUT_ZIP%.zip}"
+# Forward slashes (cygpath -m) so Git Bash does not eat \a in D:\a\...
+# zipfile writes to OUT_ZIP in place — shutil.make_archive chdirs into STAGE
+# and on this runner the zip landed in the temp dir, which the trap then deletes.
+OUT_FOR_PY="$OUT_ZIP"
 STAGE_FOR_PY="$STAGE"
 if command -v cygpath >/dev/null 2>&1; then
-  ARCHIVE_ROOT="$(cygpath -w "$ARCHIVE_ROOT")"
-  STAGE_FOR_PY="$(cygpath -w "$STAGE")"
+  OUT_FOR_PY="$(cygpath -m "$OUT_ZIP")"
+  STAGE_FOR_PY="$(cygpath -m "$STAGE")"
 fi
-"$PY" -c "import shutil, sys; shutil.make_archive(sys.argv[1], 'zip', sys.argv[2])" \
-  "$ARCHIVE_ROOT" "$STAGE_FOR_PY"
+DICTATOR_ZIP_OUT="$OUT_FOR_PY" DICTATOR_ZIP_SRC="$STAGE_FOR_PY" "$PY" -c "
+import os, zipfile
+out, root = os.environ['DICTATOR_ZIP_OUT'], os.environ['DICTATOR_ZIP_SRC']
+with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+    for dirpath, _, files in os.walk(root):
+        for name in files:
+            full = os.path.join(dirpath, name)
+            zf.write(full, os.path.relpath(full, root))
+"
+
+if [[ ! -f "$OUT_ZIP" ]]; then
+  echo "package-windows: zip was not created at $OUT_ZIP" >&2
+  ls -la "$ROOT" >&2 || true
+  exit 1
+fi
 
 echo "package-windows: zip $(du -sh "$OUT_ZIP" | awk '{print $1}') $OUT_ZIP"
 echo "package-windows: from $RELEASE_DIR"
