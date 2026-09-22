@@ -410,7 +410,12 @@ fn tray_image(status: AppStatus) -> Image<'static> {
 
 fn apply_window_glass(window: &tauri::WebviewWindow) {
     let _ = window.set_theme(Some(tauri::Theme::Dark));
+    // macOS: keep the webview clear so darker vibrancy can show in chrome.
+    // Windows: WebView2 transparency is unreliable — solid dark backing instead.
+    #[cfg(target_os = "macos")]
     let _ = window.set_background_color(Some(tauri::window::Color(0, 0, 0, 0)));
+    #[cfg(not(target_os = "macos"))]
+    let _ = window.set_background_color(Some(tauri::window::Color(28, 28, 30, 255)));
     crate::platform::style_settings(window);
 }
 
@@ -436,7 +441,7 @@ fn show_settings(app: &AppHandle) {
     };
     match tauri::WebviewWindowBuilder::from_config(app, &config).and_then(|builder| {
         builder
-            .transparent(true)
+            .transparent(cfg!(target_os = "macos"))
             .theme(Some(tauri::Theme::Dark))
             .visible(true)
             .build()

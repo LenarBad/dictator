@@ -27,7 +27,7 @@
         "theme": "Dark",
         "titleBarStyle": "Visible",
         "windowEffects": {
-          "effects": ["hudWindow"],
+          "effects": ["windowBackground"],
           "state": "active"
         }
       },

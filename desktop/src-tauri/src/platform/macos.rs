@@ -369,7 +369,7 @@ pub fn on_settings_closed(app: &AppHandle) {
 pub fn style_settings(window: &WebviewWindow) {
     if let Err(err) = window_vibrancy::apply_vibrancy(
         window,
-        window_vibrancy::NSVisualEffectMaterial::HudWindow,
+        window_vibrancy::NSVisualEffectMaterial::WindowBackground,
         Some(window_vibrancy::NSVisualEffectState::Active),
         None,
     ) {
