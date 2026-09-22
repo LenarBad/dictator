@@ -30,6 +30,7 @@ type UiState = {
   microphones: MicrophoneInfo[];
   accessibility_trusted: boolean;
   microphone_trusted: boolean;
+  app_version: string;
 };
 
 const STATUS_LABEL: Record<AppStatus, string> = {
@@ -215,6 +216,7 @@ function fillForm(state: UiState) {
   if (preload) preload.checked = state.settings.preload_model;
   if (limit) limit.value = String(state.settings.max_recording_seconds);
   fillMicrophones(state);
+  setText("#app-version", state.app_version);
   setText("#settings-path", state.settings_path);
   applyPermissions(state);
   applyEngine(state);
@@ -335,6 +337,7 @@ function previewState(): UiState {
     ],
     accessibility_trusted: false,
     microphone_trusted: false,
+    app_version: "0.3.0",
   };
 }
 

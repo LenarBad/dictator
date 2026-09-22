@@ -96,6 +96,18 @@ h2 {
   display: block;
 }
 
+.title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.version {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
 .lede {
   margin-top: 1px;
   color: var(--muted);

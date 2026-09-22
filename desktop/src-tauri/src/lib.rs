@@ -71,6 +71,7 @@ struct UiState {
     microphones: Vec<recorder::MicrophoneInfo>,
     accessibility_trusted: bool,
     microphone_trusted: bool,
+    app_version: String,
 }
 
 #[tauri::command]
@@ -101,6 +102,7 @@ fn get_state(app: AppHandle) -> UiState {
         microphones,
         accessibility_trusted: accessibility_trusted(),
         microphone_trusted: microphone_trusted(),
+        app_version: app.package_info().version.to_string(),
     }
 }
 
@@ -301,6 +303,13 @@ fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let hotkey = MenuItem::with_id(app, "hotkey", "Хоткей: ctrl+shift+d", false, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", "Записать", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Настройки…", true, None::<&str>)?;
+    let version = MenuItem::with_id(
+        app,
+        "version",
+        format!("Версия {}", app.package_info().version),
+        false,
+        None::<&str>,
+    )?;
     let quit = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -311,6 +320,7 @@ fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
             &toggle,
             &settings,
             &PredefinedMenuItem::separator(app)?,
+            &version,
             &quit,
         ],
     )?;
