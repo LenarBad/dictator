@@ -76,22 +76,15 @@ jobs:
             echo "## Что нового"
             echo
             if [[ -n "${PREV}" ]]; then
-              CHANGES="$(git log --pretty=format:'- %s' "${PREV}..${TAG}" --no-merges \
-                | grep -v -E '^- Release [0-9]' || true)"
-              if [[ -n "${CHANGES}" ]]; then
-                printf '%s\n' "${CHANGES}"
-              else
-                echo "- Обновление сборки и метаданных."
-              fi
-              echo
-              echo "**Полный diff:** https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
+              echo "https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
             else
-              echo "- Первый релиз."
+              echo "Первый релиз."
             fi
             echo
             echo "## Установка"
             echo
-            echo "Скачайте \`Dictator-macos-aarch64.app.zip\` ниже и следуйте [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md)."
+            echo "- Mac: \`Dictator-macos-aarch64.app.zip\` — [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md)"
+            echo "- Windows: \`Dictator-windows-x64.exe\`"
           } > /tmp/release-notes.md
           echo "wrote $(wc -l < /tmp/release-notes.md) lines"
 
