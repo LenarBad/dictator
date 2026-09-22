@@ -8,6 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use clipboard_win::{formats, get_clipboard, set_clipboard};
+use cpal::traits::HostTrait;
 use tauri::{AppHandle, WebviewWindow};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Threading::{
