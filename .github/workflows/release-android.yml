@@ -32,13 +32,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Default packages still include legacy `tools`, which Google removed from the
+      # SDK repo ("Failed to find package 'tools'"). Install only what we need.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install SDK packages
-        run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-          yes | sdkmanager --licenses >/dev/null || true
+        with:
+          packages: platform-tools platforms;android-35 build-tools;35.0.0
 
       - name: Sideload keystore properties
         working-directory: android
