@@ -23,7 +23,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +31,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle*
+            android/gradle/wrapper/gradle-wrapper.properties
 
       # Default packages still include legacy `tools`, which Google removed from the
       # SDK repo ("Failed to find package 'tools'"). Install only what we need.
@@ -38,6 +42,23 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           packages: platform-tools platforms;android-35 build-tools;35.0.0
+
+      - name: Cache GigaAM ONNX
+        uses: actions/cache@v4
+        with:
+          path: desktop/src-tauri/resources/gigaam
+          key: gigaam-v3-2025-12-16
+
+      - name: Cache diarization ONNX
+        uses: actions/cache@v4
+        with:
+          path: |
+            desktop/src-tauri/resources/diarize/segmentation.int8.onnx
+            desktop/src-tauri/resources/diarize/embedding.onnx
+          key: diarize-pyannote-3.0-int8-titanet-small
+
+      - name: Fetch STT model into desktop + android assets
+        run: bash scripts/fetch-stt-model.sh
 
       - name: Sideload keystore properties
         working-directory: android
