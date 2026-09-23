@@ -9,6 +9,22 @@ Dictator itself is MIT-licensed ([LICENSE](LICENSE)). The desktop app redistribu
 - License: MIT (Copyright (c) 2024 GigaChat Team)
 - In-tree copy bundled with the app: `desktop/src-tauri/resources/gigaam/LICENSE`
 
+## pyannote segmentation 3.0 (optional speaker diarization)
+
+- Project: [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
+- Packaged via: [sherpa-onnx speaker-segmentation-models](https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-segmentation-models) (`sherpa-onnx-pyannote-segmentation-3-0`, file `model.int8.onnx`)
+- License: MIT (Copyright (c) 2022 CNRS)
+- In-tree copy bundled with the app: `desktop/src-tauri/resources/diarize/licenses/pyannote-segmentation-3.0.LICENSE`
+- Used only when «Разделять говорящих» is on
+
+## NeMo TitaNet Small (optional speaker embedding)
+
+- Project: [NVIDIA NeMo TitaNet-Small](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small)
+- Packaged via: [sherpa-onnx speaker-recongition-models](https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models) (`nemo_en_titanet_small.onnx`)
+- License: Apache-2.0 (NVIDIA NeMo Toolkit 1.19.0). The ONNX file has no LICENSE beside it; the toolkit text is bundled.
+- In-tree copy bundled with the app: `desktop/src-tauri/resources/diarize/licenses/nemo-titanet-small.LICENSE`
+- Used only when «Разделять говорящих» is on
+
 ## sherpa-onnx
 
 - Crate: [`sherpa-onnx`](https://crates.io/crates/sherpa-onnx) (Rust wrapper) and the underlying [k2-fsa/sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) toolkit / ONNX Runtime

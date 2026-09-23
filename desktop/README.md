@@ -1,6 +1,6 @@
 # Dictator desktop (Tauri 2)
 
-Только macOS. Если вы не разработчик — установка в корневом [README](../README.md) и в [docs/INSTALL.md](../docs/INSTALL.md). Сборка с нуля (Homebrew, Node, Rust): [docs/BUILD.md](../docs/BUILD.md).
+Desktop: macOS Apple Silicon и Windows x64. Если вы не разработчик — установка в корневом [README](../README.md) и в [docs/INSTALL.md](../docs/INSTALL.md). Локальная сборка `.app` с Mac (Homebrew, Node, Rust): [docs/BUILD.md](../docs/BUILD.md). NSIS для Windows собирает GitHub Actions ([docs/WINDOWS.md](../docs/WINDOWS.md)), не `npm run build:app`.
 
 Ежедневный путь — **`/Applications/Dictator.app`**: tray, глобальный хоткей, запись WAV, вставка.
 GigaAM-v3 e2e RNNT работает внутри того же бинаря через sherpa-onnx.
@@ -13,7 +13,8 @@ npm install
 npm run build:app
 ```
 
-Скрипт скачивает ONNX (~221 MB) в `src-tauri/resources/gigaam`, собирает `.app`,
+Скрипт скачивает GigaAM (~221 МБ) в `src-tauri/resources/gigaam` и модели
+разделения говорящих (~40 МБ) в `src-tauri/resources/diarize`, собирает `.app`,
 подписывает ad-hoc и копирует в `/Applications/Dictator.app`.
 
 Dev без установки в `/Applications`:

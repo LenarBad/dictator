@@ -100,6 +100,7 @@ pub fn shutdown(app: &AppHandle) {
     }
     drop(recorder);
     *state.engine.lock().expect("engine") = None;
+    *state.diarizer.lock().expect("diarizer") = None;
 }
 
 /// Deletes the temp WAV when dropped (normal return, error, or unwind).
@@ -130,7 +131,10 @@ fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
             return Ok(());
         }
         ensure_engine(app)?;
-        let text = {
+        let text = if settings.diarization_enabled {
+            ensure_diarizer(app)?;
+            transcribe_with_speakers(app, &wav.0)?
+        } else {
             let state = app.state::<AppState>();
             let mut slot = state.engine.lock().expect("engine");
             let engine = slot.as_mut().ok_or("STT engine missing")?;
@@ -195,12 +199,11 @@ fn set_status(app: &AppHandle, status: AppStatus) {
 
 pub fn spawn_engine_in_background(app: AppHandle) {
     thread::spawn(move || {
-        let preload = app
-            .state::<AppState>()
-            .settings
-            .lock()
-            .expect("settings")
-            .preload_model;
+        let (preload, diarize) = {
+            let state = app.state::<AppState>();
+            let settings = state.settings.lock().expect("settings");
+            (settings.preload_model, settings.diarization_enabled)
+        };
         if preload {
             crate::notify::show("Dictator", "Загрузка модели…");
         }
@@ -210,8 +213,139 @@ pub fn spawn_engine_in_background(app: AppHandle) {
                 .lock()
                 .expect("engine_error") = Some(err.clone());
             crate::notify::show("Dictator", &err);
+        } else if diarize {
+            if let Err(err) = ensure_diarizer(&app) {
+                *app.state::<AppState>()
+                    .engine_error
+                    .lock()
+                    .expect("engine_error") = Some(err.clone());
+                crate::notify::show("Dictator", &err);
+            }
         }
         let _ = app.emit("status-changed", AppStatus::Idle);
         refresh_tray(&app);
     });
+}
+
+fn ensure_diarizer(app: &AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    {
+        let slot = state.diarizer.lock().expect("diarizer");
+        if slot.is_some() {
+            return Ok(());
+        }
+    }
+    let preload = state.settings.lock().expect("settings").preload_model;
+    let mut diarizer = crate::diarize::Diarizer::new()?;
+    if preload {
+        diarizer.preload()?;
+    }
+    *state.diarizer.lock().expect("diarizer") = Some(diarizer);
+    Ok(())
+}
+
+/// Diarize the whole recording, then run GigaAM on each merged turn.
+/// The toggle-off path does not call this.
+fn transcribe_with_speakers(app: &AppHandle, audio: &std::path::Path) -> Result<String, String> {
+    let (samples, rate) = crate::wav::read_pcm16_wav(audio)?;
+    let segments = {
+        let state = app.state::<AppState>();
+        let mut slot = state.diarizer.lock().expect("diarizer");
+        let diarizer = slot.as_mut().ok_or("Разделение говорящих не загружено")?;
+        diarizer.process(&samples, rate)?
+    };
+    let segments = {
+        let state = app.state::<AppState>();
+        let mut slot = state.diarizer.lock().expect("diarizer");
+        let diarizer = slot.as_mut().ok_or("Разделение говорящих не загружено")?;
+        diarizer.align_voices(&samples, rate, &segments)
+    };
+    note_diarization(&segments);
+    let state = app.state::<AppState>();
+    let mut slot = state.engine.lock().expect("engine");
+    let engine = slot.as_mut().ok_or("STT engine missing")?;
+    transcribe_turns(engine, &segments, &samples, rate)
+}
+
+fn transcribe_turns(
+    engine: &mut crate::stt::Engine,
+    segments: &[crate::speakers::Segment],
+    samples: &[f32],
+    sample_rate: u32,
+) -> Result<String, String> {
+    if samples.is_empty() || sample_rate == 0 {
+        return Ok(String::new());
+    }
+    let turns = crate::speakers::merge_adjacent(&crate::speakers::absorb_overlaps(segments));
+    // No speech regions: still paste a normal transcript, without speaker labels.
+    if turns.is_empty() {
+        return engine.transcribe_samples(samples, sample_rate);
+    }
+    let mut texts = Vec::with_capacity(turns.len());
+    for turn in &turns {
+        let slice = crate::wav::slice_seconds(samples, sample_rate, turn.start, turn.end);
+        if slice.is_empty() {
+            texts.push(String::new());
+            continue;
+        }
+        texts.push(engine.transcribe_samples(&slice, sample_rate)?);
+    }
+    Ok(crate::speakers::format(&turns, &texts))
+}
+
+fn note_diarization(segments: &[crate::speakers::Segment]) {
+    let mut speakers: Vec<i32> = segments.iter().map(|segment| segment.speaker).collect();
+    speakers.sort_unstable();
+    speakers.dedup();
+    let spans = segments
+        .iter()
+        .map(|segment| {
+            format!(
+                "{:.2}-{:.2}:{}",
+                segment.start, segment.end, segment.speaker
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let message = format!(
+        "segments={} speakers={} [{}]",
+        segments.len(),
+        speakers.len(),
+        spans
+    );
+    eprintln!("dictator: diarization {message}");
+    let mut path = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    path.push("dictator");
+    let _ = std::fs::create_dir_all(&path);
+    path.push("diarization.log");
+    let _ = std::fs::write(path, message + "\n");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stub_diarization_has_no_speaker_prefix() {
+        let mut engine = crate::stt::Engine::stub();
+        let mut diarizer = crate::diarize::Diarizer::stub();
+        let samples = vec![0.0_f32; crate::wav::SAMPLE_RATE as usize];
+        let segments = diarizer
+            .process(&samples, crate::wav::SAMPLE_RATE)
+            .expect("segments");
+        let text = transcribe_turns(&mut engine, &segments, &samples, crate::wav::SAMPLE_RATE)
+            .expect("text");
+        assert!(text.contains("[stub]"), "{text}");
+        assert!(!text.contains("Спикер"), "{text}");
+    }
+
+    #[test]
+    fn empty_diarization_falls_back_to_plain_stub() {
+        let mut engine = crate::stt::Engine::stub();
+        let samples = vec![0.0_f32; crate::wav::SAMPLE_RATE as usize];
+        let text =
+            transcribe_turns(&mut engine, &[], &samples, crate::wav::SAMPLE_RATE).expect("text");
+        assert!(text.contains("[stub]"), "{text}");
+        assert!(!text.contains("Спикер"), "{text}");
+    }
 }

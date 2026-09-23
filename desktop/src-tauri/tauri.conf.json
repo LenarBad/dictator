@@ -16,7 +16,7 @@
         "label": "settings",
         "title": "Dictator",
         "width": 420,
-        "height": 560,
+        "height": 620,
         "minWidth": 380,
         "minHeight": 440,
         "create": false,
@@ -71,7 +71,11 @@
       "resources/gigaam/decoder.onnx",
       "resources/gigaam/joiner.onnx",
       "resources/gigaam/tokens.txt",
-      "resources/gigaam/LICENSE"
+      "resources/gigaam/LICENSE",
+      "resources/diarize/segmentation.int8.onnx",
+      "resources/diarize/embedding.onnx",
+      "resources/diarize/licenses/pyannote-segmentation-3.0.LICENSE",
+      "resources/diarize/licenses/nemo-titanet-small.LICENSE"
     ],
     "icon": [
       "icons/32x32.png",

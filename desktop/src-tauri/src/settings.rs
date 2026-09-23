@@ -14,6 +14,9 @@ pub struct Settings {
     pub microphone_name: Option<String>,
     pub model_name: String,
     pub preload_model: bool,
+    /// Old settings files omit this field and stay off.
+    #[serde(default)]
+    pub diarization_enabled: bool,
     pub max_recording_seconds: f64,
 }
 
@@ -25,6 +28,7 @@ impl Default for Settings {
             microphone_name: None,
             model_name: DEFAULT_MODEL.to_string(),
             preload_model: true,
+            diarization_enabled: false,
             max_recording_seconds: 180.0,
         }
     }
@@ -83,6 +87,28 @@ pub fn settings_path() -> PathBuf {
     let mut dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
     dir.push("dictator");
     dir.join("settings.json")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_diarization_field_stays_off() {
+        let raw = r#"{
+            "hotkey": "ctrl+alt+d",
+            "paste_enabled": false,
+            "microphone_name": "Built-in",
+            "model_name": "v3_e2e_rnnt",
+            "preload_model": false,
+            "max_recording_seconds": 90.0
+        }"#;
+        let settings: Settings = serde_json::from_str(raw).expect("settings");
+        assert!(!settings.diarization_enabled);
+        assert_eq!(settings.hotkey, "ctrl+alt+d");
+        assert!(!settings.paste_enabled);
+        assert_eq!(settings.max_recording_seconds, 90.0);
+    }
 }
 
 pub fn is_macos_conflict_hotkey(combo: &str) -> bool {

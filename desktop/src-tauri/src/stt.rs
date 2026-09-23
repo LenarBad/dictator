@@ -19,17 +19,21 @@ pub struct Engine {
 impl Engine {
     pub fn new() -> Result<Self, String> {
         if stub_enabled() {
-            return Ok(Self {
-                stub: true,
-                model_dir: PathBuf::new(),
-                recognizer: None,
-            });
+            return Ok(Self::stub());
         }
         Ok(Self {
             stub: false,
             model_dir: resolve_model_dir()?,
             recognizer: None,
         })
+    }
+
+    pub(crate) fn stub() -> Self {
+        Self {
+            stub: true,
+            model_dir: PathBuf::new(),
+            recognizer: None,
+        }
     }
 
     pub fn preload(&mut self) -> Result<(), String> {
@@ -50,13 +54,26 @@ impl Engine {
             return Ok(format!("[stub] {name} ({duration:.1}s)"));
         }
         let (samples, rate) = wav::read_pcm16_wav(audio)?;
+        self.transcribe_samples(&samples, rate)
+    }
+
+    /// Transcribe PCM already in memory. Longer than ~24 s is split the same way as a file.
+    pub(crate) fn transcribe_samples(
+        &mut self,
+        samples: &[f32],
+        sample_rate: u32,
+    ) -> Result<String, String> {
+        if self.stub {
+            let duration = wav::duration_seconds(samples, sample_rate);
+            return Ok(format!("[stub] ({duration:.1}s)"));
+        }
         if samples.is_empty() {
             return Ok(String::new());
         }
         let recognizer = self.ensure_recognizer()?;
         let mut parts = Vec::new();
-        for chunk in wav::split_for_asr(&samples, rate) {
-            let text = decode_chunk(recognizer, &chunk, rate)?;
+        for chunk in wav::split_for_asr(samples, sample_rate) {
+            let text = decode_chunk(recognizer, &chunk, sample_rate)?;
             if !text.is_empty() {
                 parts.push(text);
             }
@@ -75,7 +92,7 @@ impl Engine {
     }
 }
 
-fn stub_enabled() -> bool {
+pub(crate) fn stub_enabled() -> bool {
     matches!(
         std::env::var(STUB_ENV)
             .unwrap_or_default()

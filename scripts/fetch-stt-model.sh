@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Download GigaAM-v3 e2e RNNT ONNX files for the in-process sherpa-onnx engine.
+# Also fetches diarization weights. That call stays above the early exit: if GigaAM
+# is already on disk this script used to return before a child fetch could run.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+bash "$ROOT/scripts/fetch-diarize-model.sh"
+
 DEST="$ROOT/desktop/src-tauri/resources/gigaam"
 URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2"
 ARCHIVE_NAME="sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2"

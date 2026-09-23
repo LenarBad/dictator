@@ -1,3 +1,4 @@
+mod diarize;
 mod hotkey;
 mod hud;
 mod notify;
@@ -6,6 +7,7 @@ mod pipeline;
 mod platform;
 mod recorder;
 mod settings;
+mod speakers;
 mod stt;
 mod wav;
 
@@ -54,6 +56,7 @@ pub(crate) struct AppState {
     tray: Mutex<Option<TrayItems>>,
     pub recorder: Mutex<recorder::Recorder>,
     pub engine: Mutex<Option<stt::Engine>>,
+    pub diarizer: Mutex<Option<diarize::Diarizer>>,
     pub engine_error: Mutex<Option<String>>,
     pub focus: Mutex<Option<crate::paste::Focus>>,
     pub record_gen: Mutex<u64>,
@@ -122,6 +125,9 @@ fn save_settings(app: AppHandle, settings: Settings) -> Result<Settings, String>
     }
     next.save()?;
     *app.state::<AppState>().settings.lock().expect("settings") = next.clone();
+    if !next.diarization_enabled {
+        *app.state::<AppState>().diarizer.lock().expect("diarizer") = None;
+    }
     refresh_tray(&app);
     Ok(next)
 }
@@ -167,6 +173,7 @@ pub fn run() {
             tray: Mutex::new(None),
             recorder: Mutex::new(recorder::Recorder::default()),
             engine: Mutex::new(None),
+            diarizer: Mutex::new(None),
             engine_error: Mutex::new(None),
             focus: Mutex::new(None),
             record_gen: Mutex::new(0),
@@ -409,7 +416,12 @@ fn refresh_tray_on_main(app: &AppHandle) {
 
 fn tray_image(status: AppStatus) -> Image<'static> {
     let bytes: &[u8] = match status {
+        // macOS: black template so the menu bar tints it. Windows/Linux: same
+        // green as the settings status pip — black vanishes on a dark tray.
+        #[cfg(target_os = "macos")]
         AppStatus::Idle => include_bytes!("../icons/tray-idle.png"),
+        #[cfg(not(target_os = "macos"))]
+        AppStatus::Idle => include_bytes!("../icons/tray-idle-windows.png"),
         AppStatus::Recording => include_bytes!("../icons/tray-recording.png"),
         AppStatus::Transcribing => include_bytes!("../icons/tray-transcribing.png"),
     };

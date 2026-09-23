@@ -1,16 +1,16 @@
 # Contributing
 
-Dictator is offline Russian dictation for the Mac menu bar (Tauri 2 + local GigaAM).
+Dictator is offline Russian dictation for the desktop tray (Tauri 2 + local GigaAM): macOS Apple Silicon and Windows x64.
 
 ## Before you open a PR
 
 1. Read [docs/BUILD.md](docs/BUILD.md) (or the short command list in [desktop/README.md](desktop/README.md)).
-2. Fetch the STT model: `bash scripts/fetch-stt-model.sh` (SHA-256 is verified).
+2. Fetch models: `bash scripts/fetch-stt-model.sh` (GigaAM and diarization weights; SHA-256 is verified).
 3. From `desktop/`: `npm ci` and run what you changed (`npm run tauri dev` or tests).
 
 ## Scope
 
-- macOS Apple Silicon is the supported target today
+- Supported targets: macOS 12+ Apple Silicon and Windows 10 1809+ x64. Code on a Mac; Windows artifacts come from GitHub Actions ([docs/WINDOWS.md](docs/WINDOWS.md))
 - Keep recognition fully local — no cloud STT, analytics, or phone-home
 - Prefer small, focused PRs with a short “why”
 
