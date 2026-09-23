@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <application
         android:allowBackup="false"
@@ -33,5 +35,11 @@
                 android:name="android.view.im"
                 android:resource="@xml/method" />
         </service>
+
+        <service
+            android:name=".stt.SttService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"
+            android:process=":stt" />
     </application>
 </manifest>

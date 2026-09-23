@@ -22,8 +22,8 @@
 
 | Шаг | Состояние |
 |---|---|
-| 1. Каркас APK + мастер + пустой IME (`commitText("тест")`) | сделано — `assembleRelease` ок; прогон на телефоне через Actions |
-| 2. Процесс `:stt`, AIDL, микрофон, stub STT | не начато |
+| 1. Каркас APK + мастер + пустой IME (`commitText("тест")`) | сделано |
+| 2. Процесс `:stt`, AIDL, микрофон, stub STT | сделано — прогон на телефоне |
 | 3. GigaAM в assets через sherpa-onnx | не начато |
 | 4. Плитка QS + `RECOGNIZE_SPEECH` | не начато |
 | 5. CI + README / INSTALL / SECURITY | частично: workflow есть; доки INSTALL/SECURITY — после прогона на телефоне |

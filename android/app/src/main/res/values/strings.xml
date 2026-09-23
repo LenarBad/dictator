@@ -19,7 +19,7 @@
     <string name="setup_notifications_granted">Уведомления разрешены</string>
     <string name="setup_notifications_denied">Нужны для записи из шторки и результата</string>
     <string name="setup_return_ime">После вставки возвращаться к прежней клавиатуре</string>
-    <string name="setup_how_to">В Telegram: глобус → Dictator → «Вставить тест» (пока без распознавания).</string>
+    <string name="setup_how_to">В Telegram: глобус → Dictator → микрофон → говорите → снова микрофон. Пока stub: «[stub] (1.2s)».</string>
     <string name="setup_ready">Готово к проверке IME</string>
 
     <string name="ime_switch">Клавиатура</string>
@@ -27,6 +27,17 @@
     <string name="ime_space">Пробел</string>
     <string name="ime_backspace">⌫</string>
     <string name="ime_action_default">Готово</string>
-    <string name="ime_mic_soon">Микрофон — на следующем шаге</string>
-    <string name="ime_hint">Шаг 1: вставка без STT</string>
+    <string name="ime_mic_idle">Нажмите и говорите</string>
+    <string name="ime_mic_recording">Слушаю… нажмите ещё раз</string>
+    <string name="ime_mic_busy">Не готово</string>
+    <string name="ime_status_idle">Stub STT · микрофон</string>
+    <string name="ime_status_recording">Запись %1$s</string>
+    <string name="ime_status_transcribing">Распознавание…</string>
+    <string name="ime_stt_unavailable">Сервис распознавания недоступен</string>
+    <string name="ime_need_mic">Сначала разрешите микрофон в Dictator</string>
+
+    <string name="notif_channel_name">Dictator</string>
+    <string name="notif_recording">Запись…</string>
+    <string name="notif_transcribing">Распознавание…</string>
+    <string name="notif_copied_title">Скопировано</string>
 </resources>
