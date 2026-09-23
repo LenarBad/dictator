@@ -1,8 +1,10 @@
 # Сборка Dictator из исходников
 
-Этот путь нужен, если на [Releases](https://github.com/LenarBad/dictator/releases/latest) ещё нет zip или вы меняете код. Понадобятся Терминал, инструменты Apple, Node и Rust. Сборка занимает **15–40 минут** и около **2 ГБ** места.
+Этот путь нужен, если на [Releases](https://github.com/LenarBad/dictator/releases/latest) ещё нет zip или вы меняете код. Ниже — **локальная сборка `.app` на Mac**. Windows-установщик собирает GitHub Actions, не этот скрипт ([WINDOWS.md](WINDOWS.md), [INSTALL.md](INSTALL.md)).
 
-Готовый zip без Терминала: [INSTALL.md](INSTALL.md).
+Понадобятся Терминал, инструменты Apple, Node и Rust. Сборка занимает **15–40 минут** и около **2 ГБ** места.
+
+Готовый zip / exe без Терминала: [INSTALL.md](INSTALL.md).
 
 ## 1. Откройте Терминал
 

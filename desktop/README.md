@@ -1,6 +1,6 @@
 # Dictator desktop (Tauri 2)
 
-Только macOS. Если вы не разработчик — установка в корневом [README](../README.md) и в [docs/INSTALL.md](../docs/INSTALL.md). Сборка с нуля (Homebrew, Node, Rust): [docs/BUILD.md](../docs/BUILD.md).
+Desktop: macOS Apple Silicon и Windows x64. Если вы не разработчик — установка в корневом [README](../README.md) и в [docs/INSTALL.md](../docs/INSTALL.md). Локальная сборка `.app` с Mac (Homebrew, Node, Rust): [docs/BUILD.md](../docs/BUILD.md). NSIS для Windows собирает GitHub Actions ([docs/WINDOWS.md](../docs/WINDOWS.md)), не `npm run build:app`.
 
 Ежедневный путь — **`/Applications/Dictator.app`**: tray, глобальный хоткей, запись WAV, вставка.
 GigaAM-v3 e2e RNNT работает внутри того же бинаря через sherpa-onnx.

@@ -84,7 +84,7 @@ jobs:
             echo "## Установка"
             echo
             echo "- Mac: \`Dictator-macos-aarch64.app.zip\` — [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md)"
-            echo "- Windows: \`Dictator-windows-x64.exe\`"
+            echo "- Windows: \`Dictator-windows-x64.exe\` — [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md)"
           } > /tmp/release-notes.md
           echo "wrote $(wc -l < /tmp/release-notes.md) lines"
 

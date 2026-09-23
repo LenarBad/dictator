@@ -1,6 +1,6 @@
 # Contributing
 
-Dictator is offline Russian dictation for the Mac menu bar (Tauri 2 + local GigaAM).
+Dictator is offline Russian dictation for the desktop tray (Tauri 2 + local GigaAM): macOS Apple Silicon and Windows x64.
 
 ## Before you open a PR
 
@@ -10,7 +10,7 @@ Dictator is offline Russian dictation for the Mac menu bar (Tauri 2 + local Giga
 
 ## Scope
 
-- macOS Apple Silicon is the supported target today
+- Supported targets: macOS 12+ Apple Silicon and Windows 10 1809+ x64. Code on a Mac; Windows artifacts come from GitHub Actions ([docs/WINDOWS.md](docs/WINDOWS.md))
 - Keep recognition fully local — no cloud STT, analytics, or phone-home
 - Prefer small, focused PRs with a short “why”
 
