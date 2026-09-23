@@ -12,8 +12,8 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.appcompat.widget.SwitchCompat
 import com.google.android.material.button.MaterialButton
-import com.google.android.material.materialswitch.MaterialSwitch
 import io.lenar.dictator.R
 
 class SetupActivity : AppCompatActivity() {
@@ -25,7 +25,7 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var btnGrantMic: MaterialButton
     private lateinit var btnGrantNotifications: MaterialButton
     private lateinit var labelNotifications: TextView
-    private lateinit var switchReturnIme: MaterialSwitch
+    private lateinit var switchReturnIme: SwitchCompat
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {

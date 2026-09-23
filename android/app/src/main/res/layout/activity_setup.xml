@@ -104,7 +104,8 @@
             android:text="@string/setup_grant_notifications"
             android:textAllCaps="false" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
+        <!-- SwitchCompat: MaterialSwitch needs Theme.Material3 and crashes under MaterialComponents. -->
+        <androidx.appcompat.widget.SwitchCompat
             android:id="@+id/switchReturnIme"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
