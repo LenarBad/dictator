@@ -51,6 +51,14 @@ jobs:
           path: desktop/src-tauri/resources/gigaam
           key: gigaam-v3-2025-12-16
 
+      - name: Cache diarization ONNX
+        uses: actions/cache@v4
+        with:
+          path: |
+            desktop/src-tauri/resources/diarize/segmentation.int8.onnx
+            desktop/src-tauri/resources/diarize/embedding.onnx
+          key: diarize-pyannote-3.0-int8-titanet-small
+
       - name: Fetch STT model
         run: bash scripts/fetch-stt-model.sh
 

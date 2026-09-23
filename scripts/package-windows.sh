@@ -87,6 +87,17 @@ if [[ ! -f "$STAGE/resources/gigaam/encoder.int8.onnx" && ! -f "$STAGE/gigaam/en
   exit 1
 fi
 
+if [[ ! -f "$STAGE/resources/diarize/segmentation.int8.onnx" && ! -f "$STAGE/diarize/segmentation.int8.onnx" ]]; then
+  echo "package-windows: diarization segmentation model missing from portable stage" >&2
+  ls -la "$RELEASE_DIR/resources" >&2 || true
+  exit 1
+fi
+if [[ ! -f "$STAGE/resources/diarize/embedding.onnx" && ! -f "$STAGE/diarize/embedding.onnx" ]]; then
+  echo "package-windows: diarization embedding model missing from portable stage" >&2
+  ls -la "$RELEASE_DIR/resources" >&2 || true
+  exit 1
+fi
+
 rm -f "$OUT_ZIP"
 if command -v python >/dev/null 2>&1; then
   PY=python

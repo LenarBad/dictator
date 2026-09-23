@@ -6,7 +6,7 @@ Email **lenar.rf@gmail.com** (private disclosure preferred). Please include OS v
 
 ## Threat model (desktop)
 
-Dictator is a local speech-to-text tray app for **macOS** (Apple Silicon) and **Windows** (x64). After install it does **not** contact the network. Recognition runs on-device (GigaAM via sherpa-onnx).
+Dictator is a local speech-to-text tray app for **macOS** (Apple Silicon) and **Windows** (x64). After install it does **not** contact the network. Recognition runs on-device (GigaAM via sherpa-onnx). Optional speaker separation adds two more local ONNX models (pyannote segmentation and NeMo TitaNet); those stay on the machine as well.
 
 ### Powerful permissions (by design)
 
@@ -50,4 +50,5 @@ See [docs/INSTALL.md](docs/INSTALL.md). Trust is: open source + your own build, 
 ## Supply chain
 
 - STT weights are fetched by `scripts/fetch-stt-model.sh` with a pinned SHA-256 of the upstream archive
+- Diarization weights are fetched by `scripts/fetch-diarize-model.sh` (also invoked from `fetch-stt-model.sh`) with pinned SHA-256 checksums
 - App code has no updater and no analytics SDK

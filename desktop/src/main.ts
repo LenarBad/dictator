@@ -11,6 +11,7 @@ type Settings = {
   microphone_name: string | null;
   model_name: string;
   preload_model: boolean;
+  diarization_enabled: boolean;
   max_recording_seconds: number;
 };
 
@@ -208,11 +209,13 @@ function fillForm(state: UiState) {
   const hotkey = document.querySelector<HTMLInputElement>("#hotkey");
   const paste = document.querySelector<HTMLInputElement>("#paste_enabled");
   const preload = document.querySelector<HTMLInputElement>("#preload_model");
+  const diarization = document.querySelector<HTMLInputElement>("#diarization_enabled");
   const limit = document.querySelector<HTMLInputElement>("#max_recording_seconds");
   if (hotkey) hotkey.value = state.settings.hotkey;
   setText("#hotkey-display", formatHotkey(state.settings.hotkey));
   if (paste) paste.checked = state.settings.paste_enabled;
   if (preload) preload.checked = state.settings.preload_model;
+  if (diarization) diarization.checked = state.settings.diarization_enabled;
   if (limit) limit.value = String(state.settings.max_recording_seconds);
   fillMicrophones(state);
   setText("#app-version", state.app_version);
@@ -225,6 +228,8 @@ function readForm(): Settings {
   const hotkey = document.querySelector<HTMLInputElement>("#hotkey")?.value.trim() ?? "";
   const paste = document.querySelector<HTMLInputElement>("#paste_enabled")?.checked ?? true;
   const preload = document.querySelector<HTMLInputElement>("#preload_model")?.checked ?? true;
+  const diarization =
+    document.querySelector<HTMLInputElement>("#diarization_enabled")?.checked ?? false;
   const mic = document.querySelector<HTMLSelectElement>("#microphone_name")?.value.trim() ?? "";
   const limit = Number(
     document.querySelector<HTMLInputElement>("#max_recording_seconds")?.value ?? "180",
@@ -235,6 +240,7 @@ function readForm(): Settings {
     microphone_name: mic === "" ? null : mic,
     model_name: "v3_e2e_rnnt",
     preload_model: preload,
+    diarization_enabled: diarization,
     max_recording_seconds: Number.isFinite(limit) ? limit : 180,
   };
 }
@@ -323,6 +329,7 @@ function previewState(): UiState {
       microphone_name: "MacBook Pro Microphone",
       model_name: "v3_e2e_rnnt",
       preload_model: true,
+      diarization_enabled: false,
       max_recording_seconds: 180,
     },
     recording_wired: true,

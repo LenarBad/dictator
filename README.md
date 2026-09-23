@@ -12,11 +12,13 @@ Speak — the text appears. On-device Russian STT. No cloud, no account.
   <img src="docs/hero.svg" alt="Запись: волна, таймер, хоткей. Текст появляется в Заметках." width="720">
 </p>
 
-**[Скачать](https://github.com/LenarBad/dictator/releases/latest)** — Mac: `Dictator-macos-aarch64.app.zip`; Windows: `Dictator-windows-x64.exe` (около 250 МБ, программа и модель вместе).
+**[Скачать](https://github.com/LenarBad/dictator/releases/latest)** — Mac: `Dictator-macos-aarch64.app.zip`; Windows: `Dictator-windows-x64.exe` (около 290 МБ, программа и модель вместе).
 
 `⌃⇧D` / `Ctrl+Shift+D` начинает запись. Сверху экрана бежит волна. Ещё раз — текст в активном поле.
 
 Распознавание: [GigaAM-v3](https://github.com/salute-developers/GigaAM) (Sber, MIT), полностью на компьютере. Оболочка — [Tauri 2](https://tauri.app), Python не нужен. Intel Mac, Windows ARM и Linux — позже.
+
+В настройках «Диктовка» есть «Разделять говорящих» — выключено по умолчанию. В диалоге появятся подписи «Спикер 1» и «Спикер 2»; имена не распознаются.
 
 ## Как пользоваться
 
@@ -60,7 +62,7 @@ Speak — the text appears. On-device Russian STT. No cloud, no account.
 
 ## English
 
-Offline Russian dictation: speak, and the text is pasted into the focused field. Recognition runs on-device with [GigaAM-v3](https://github.com/salute-developers/GigaAM) (MIT). **macOS 12+ on Apple Silicon and Windows 10 1809+ x64.**
+Offline Russian dictation: speak, and the text is pasted into the focused field. Recognition runs on-device with [GigaAM-v3](https://github.com/salute-developers/GigaAM) (MIT). **macOS 12+ on Apple Silicon and Windows 10 1809+ x64.** Settings can label turns as «Спикер 1» and «Спикер 2»; that option is off by default and does not recognize names.
 
 Download from [Releases](https://github.com/LenarBad/dictator/releases/latest): `Dictator-macos-aarch64.app.zip` or `Dictator-windows-x64.exe`. The Mac build is ad-hoc signed, so Gatekeeper will warn; on Windows, SmartScreen will warn (no Authenticode). Enable the microphone (and on Mac, Accessibility). A recording pill appears at the top of the screen while you speak.
 

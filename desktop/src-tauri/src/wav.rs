@@ -41,6 +41,32 @@ pub fn resample(samples: &[f32], from: u32, to: u32) -> Vec<f32> {
         .collect()
 }
 
+/// Inclusive-exclusive slice of `[start_sec, end_sec)`, clamped to the buffer.
+/// An empty or inverted interval yields no samples. `split_for_asr` is unchanged.
+pub fn slice_seconds(samples: &[f32], sample_rate: u32, start_sec: f64, end_sec: f64) -> Vec<f32> {
+    if samples.is_empty() || sample_rate == 0 || !(end_sec > start_sec) {
+        return Vec::new();
+    }
+    let to_index = |seconds: f64| -> usize {
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return 0;
+        }
+        let raw = seconds * f64::from(sample_rate);
+        if raw >= samples.len() as f64 {
+            samples.len()
+        } else {
+            raw.round() as usize
+        }
+    };
+    let start = to_index(start_sec).min(samples.len());
+    let end = to_index(end_sec).min(samples.len());
+    if start >= end {
+        Vec::new()
+    } else {
+        samples[start..end].to_vec()
+    }
+}
+
 pub fn duration_seconds(samples: &[f32], sample_rate: u32) -> f64 {
     if sample_rate == 0 {
         return 0.0;
@@ -166,6 +192,34 @@ mod tests {
         assert_eq!(spec.sample_rate, SAMPLE_RATE);
         assert_eq!(spec.bits_per_sample, 16);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn slice_respects_bounds() {
+        let samples: Vec<f32> = (0..16_000).map(|index| index as f32).collect();
+        let head = slice_seconds(&samples, SAMPLE_RATE, 0.0, 0.5);
+        assert_eq!(head.len(), 8_000);
+        assert_eq!(head[0], 0.0);
+        assert_eq!(head[7_999], 7_999.0);
+        let tail = slice_seconds(&samples, SAMPLE_RATE, 0.5, 1.0);
+        assert_eq!(tail.len(), 8_000);
+        assert_eq!(tail[0], 8_000.0);
+    }
+
+    #[test]
+    fn slice_empty_interval_is_empty() {
+        let samples = vec![0.1_f32; 16_000];
+        assert!(slice_seconds(&samples, SAMPLE_RATE, 0.25, 0.25).is_empty());
+        assert!(slice_seconds(&samples, SAMPLE_RATE, 0.8, 0.2).is_empty());
+        assert!(slice_seconds(&samples, 0, 0.0, 1.0).is_empty());
+    }
+
+    #[test]
+    fn slice_clamps_outside_the_buffer() {
+        let samples = vec![0.2_f32; 16_000];
+        assert!(slice_seconds(&samples, SAMPLE_RATE, 1.5, 2.0).is_empty());
+        assert_eq!(slice_seconds(&samples, SAMPLE_RATE, 0.5, 5.0).len(), 8_000);
+        assert_eq!(slice_seconds(&samples, SAMPLE_RATE, -1.0, 0.5).len(), 8_000);
     }
 
     #[test]

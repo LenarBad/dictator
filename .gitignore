@@ -19,6 +19,7 @@ desktop/dist/
 desktop/src-tauri/target/
 desktop/src-tauri/resources/gigaam/*.onnx
 desktop/src-tauri/resources/gigaam/tokens.txt
+desktop/src-tauri/resources/diarize/*.onnx
 
 # Local recordings; keep the STT regression fixture
 *.wav

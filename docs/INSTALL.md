@@ -6,8 +6,8 @@
 
 | Система | Файл | Куда |
 |---|---|---|
-| Mac | `Dictator-macos-aarch64.app.zip` (~250 МБ) | папка **Программы** |
-| Windows | `Dictator-windows-x64.exe` (~250 МБ) | NSIS-установщик; zip — запасной портативный прогон |
+| Mac | `Dictator-macos-aarch64.app.zip` (~290 МБ) | папка **Программы** |
+| Windows | `Dictator-windows-x64.exe` (~290 МБ) | NSIS-установщик; zip — запасной портативный прогон |
 
 Если на странице [Releases](https://github.com/LenarBad/dictator/releases/latest) ещё нет файла — его собирает GitHub после тега вида `v0.1.0`. Пока файла нет, на Mac можно [собрать из исходников](BUILD.md). Windows-установщик с Mac локально не собирают: [Actions](https://github.com/LenarBad/dictator/actions) → Release Windows.
 

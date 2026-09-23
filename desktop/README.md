@@ -13,7 +13,8 @@ npm install
 npm run build:app
 ```
 
-Скрипт скачивает ONNX (~221 MB) в `src-tauri/resources/gigaam`, собирает `.app`,
+Скрипт скачивает GigaAM (~221 МБ) в `src-tauri/resources/gigaam` и модели
+разделения говорящих (~40 МБ) в `src-tauri/resources/diarize`, собирает `.app`,
 подписывает ad-hoc и копирует в `/Applications/Dictator.app`.
 
 Dev без установки в `/Applications`:
