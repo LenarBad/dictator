@@ -98,6 +98,10 @@ class DictatorImeService : InputMethodService() {
                 try {
                     api.register(sttCallback)
                     applyStatus(api.status())
+                    if (DictatorPrefs.preloadModel(this@DictatorImeService)) {
+                        binding?.txtHint?.text = getString(R.string.ime_status_loading)
+                        api.preload()
+                    }
                 } catch (_: RemoteException) {
                     Toast.makeText(
                         this@DictatorImeService,

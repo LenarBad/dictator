@@ -23,10 +23,10 @@
 | Шаг | Состояние |
 |---|---|
 | 1. Каркас APK + мастер + пустой IME (`commitText("тест")`) | сделано |
-| 2. Процесс `:stt`, AIDL, микрофон, stub STT | сделано — прогон на телефоне |
-| 3. GigaAM в assets через sherpa-onnx | не начато |
+| 2. Процесс `:stt`, AIDL, микрофон, stub STT | сделано |
+| 3. GigaAM в assets через sherpa-onnx | в работе — `v1.13.8` JitPack; прогон RTF на телефоне |
 | 4. Плитка QS + `RECOGNIZE_SPEECH` | не начато |
-| 5. CI + README / INSTALL / SECURITY | частично: workflow есть; доки INSTALL/SECURITY — после прогона на телефоне |
+| 5. CI + README / INSTALL / SECURITY | частично: workflow тянет модель; доки INSTALL/SECURITY — после прогона |
 
 Код Android не смешивать с desktop (`platform/windows.rs` уже закрыт).
 

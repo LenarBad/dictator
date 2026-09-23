@@ -28,7 +28,7 @@ class SttService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     private val callbacks = RemoteCallbackList<ISttCallback>()
-    private val engine = Engine()
+    private lateinit var engine: Engine
     private val bindCount = AtomicInteger(0)
 
     @Volatile private var status: Int = SttContract.STATUS_IDLE
@@ -66,6 +66,20 @@ class SttService : Service() {
 
             override fun status(): Int = status
         }
+
+    override fun onCreate() {
+        super.onCreate()
+        engine = Engine(assets)
+        if (io.lenar.dictator.settings.DictatorPrefs.preloadModel(this)) {
+            worker.execute {
+                try {
+                    engine.preload()
+                } catch (_: Exception) {
+                    // First real utterance will surface the error.
+                }
+            }
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder {
         bindCount.incrementAndGet()
