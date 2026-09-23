@@ -41,4 +41,16 @@
     <string name="notif_recording">Запись…</string>
     <string name="notif_transcribing">Распознавание…</string>
     <string name="notif_copied_title">Скопировано</string>
+    <string name="notif_copied_paste_title">Скопировано, вставьте</string>
+    <string name="notif_empty_body">Пусто — говорите дольше</string>
+
+    <string name="tile_label">Dictator</string>
+    <string name="tile_subtitle_idle">Надиктовать в буфер</string>
+    <string name="tile_subtitle_recording">Запись… тап = стоп</string>
+    <string name="tile_subtitle_transcribing">Распознавание…</string>
+    <string name="tile_subtitle_setup">Сначала настройте Dictator</string>
+    <string name="tile_setup_required">Включите Dictator и микрофон в приложении</string>
+    <string name="tile_copied_toast">Скопировано, вставьте</string>
+
+    <string name="recog_label">Dictator</string>
 </resources>

@@ -173,17 +173,35 @@ class SttService : Service() {
                     return@execute
                 }
             mainHandler.post {
-                // Always copy for IME so text survives if the keyboard was killed.
-                if (activeSource == SttContract.SOURCE_IME || text.isNotEmpty()) {
-                    copyToClipboard(text)
-                }
-                if (text.isNotEmpty() && activeSource == SttContract.SOURCE_IME) {
-                    showResultNotification(text)
-                }
+                deliverBySource(activeSource, text)
                 broadcastResult(activeSource, text)
                 setStatus(SttContract.STATUS_IDLE)
                 ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 maybeStopIfUnbound()
+            }
+        }
+    }
+
+    private fun deliverBySource(source: Int, text: String) {
+        when (source) {
+            SttContract.SOURCE_IME -> {
+                copyToClipboard(text)
+                if (text.isNotEmpty()) {
+                    showResultNotification(text, getString(R.string.notif_copied_title))
+                }
+            }
+            SttContract.SOURCE_TILE -> {
+                copyToClipboard(text)
+                showResultNotification(
+                    if (text.isEmpty()) getString(R.string.notif_empty_body) else text,
+                    getString(R.string.notif_copied_paste_title),
+                )
+            }
+            SttContract.SOURCE_RECOG -> {
+                // Prefer Bundle delivery via RecognitionService; clipboard is fallback.
+                if (text.isNotEmpty()) {
+                    copyToClipboard(text)
+                }
             }
         }
     }
@@ -294,13 +312,13 @@ class SttService : Service() {
         manager.notify(NOTIFICATION_ID, buildNotification(content))
     }
 
-    private fun showResultNotification(text: String) {
+    private fun showResultNotification(text: String, title: String) {
         ensureNotificationChannel()
         val manager = getSystemService(NotificationManager::class.java) ?: return
         val preview = if (text.length > 80) text.take(80) + "…" else text
         val notification =
             NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle(getString(R.string.notif_copied_title))
+                .setContentTitle(title)
                 .setContentText(preview)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setAutoCancel(true)

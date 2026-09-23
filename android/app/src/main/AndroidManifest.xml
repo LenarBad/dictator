@@ -41,5 +41,29 @@
             android:exported="false"
             android:foregroundServiceType="microphone"
             android:process=":stt" />
+
+        <service
+            android:name=".tile.DictatorTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_notification"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".recog.DictatorRecognitionService"
+            android:exported="true"
+            android:label="@string/recog_label"
+            android:permission="android.permission.BIND_RECOGNITION_SERVICE">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
+        </service>
     </application>
 </manifest>
