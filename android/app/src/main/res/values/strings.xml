@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dictator</string>
+    <string name="ime_label">Dictator</string>
+    <string name="ime_subtype_label">Русский (голос)</string>
+
+    <string name="setup_title">Dictator</string>
+    <string name="setup_subtitle">Голосовой ввод рядом с вашей клавиатурой. Это не замена Gboard: нажатия не читаем.</string>
+    <string name="setup_step_ime">1. Включить Dictator в «Языки и ввод»</string>
+    <string name="setup_open_ime_settings">Открыть настройки ввода</string>
+    <string name="setup_ime_enabled">Dictator включён как клавиатура</string>
+    <string name="setup_ime_disabled">Dictator ещё не включён</string>
+    <string name="setup_step_mic">2. Доступ к микрофону</string>
+    <string name="setup_grant_mic">Разрешить микрофон</string>
+    <string name="setup_mic_granted">Микрофон разрешён</string>
+    <string name="setup_mic_denied">Микрофон нужен для записи</string>
+    <string name="setup_step_notifications">3. Уведомления</string>
+    <string name="setup_grant_notifications">Разрешить уведомления</string>
+    <string name="setup_notifications_granted">Уведомления разрешены</string>
+    <string name="setup_notifications_denied">Нужны для записи из шторки и результата</string>
+    <string name="setup_return_ime">После вставки возвращаться к прежней клавиатуре</string>
+    <string name="setup_how_to">В Telegram: глобус → Dictator → «Вставить тест» (пока без распознавания).</string>
+    <string name="setup_ready">Готово к проверке IME</string>
+
+    <string name="ime_switch">Клавиатура</string>
+    <string name="ime_insert_test">Вставить тест</string>
+    <string name="ime_space">Пробел</string>
+    <string name="ime_backspace">⌫</string>
+    <string name="ime_action_default">Готово</string>
+    <string name="ime_mic_soon">Микрофон — на следующем шаге</string>
+    <string name="ime_hint">Шаг 1: вставка без STT</string>
+</resources>

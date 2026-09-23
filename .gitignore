@@ -21,6 +21,14 @@ desktop/src-tauri/resources/gigaam/*.onnx
 desktop/src-tauri/resources/gigaam/tokens.txt
 desktop/src-tauri/resources/diarize/*.onnx
 
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/gigaam/*.onnx
+android/app/src/main/assets/gigaam/tokens.txt
+Dictator-android-*.apk
+
 # Local recordings; keep the STT regression fixture
 *.wav
 !desktop/src-tauri/tests/fixtures/*.wav
