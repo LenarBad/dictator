@@ -254,6 +254,13 @@ fn transcribe_with_speakers(app: &AppHandle, audio: &std::path::Path) -> Result<
         let diarizer = slot.as_mut().ok_or("Разделение говорящих не загружено")?;
         diarizer.process(&samples, rate)?
     };
+    let segments = {
+        let state = app.state::<AppState>();
+        let mut slot = state.diarizer.lock().expect("diarizer");
+        let diarizer = slot.as_mut().ok_or("Разделение говорящих не загружено")?;
+        diarizer.align_voices(&samples, rate, &segments)
+    };
+    note_diarization(&segments);
     let state = app.state::<AppState>();
     let mut slot = state.engine.lock().expect("engine");
     let engine = slot.as_mut().ok_or("STT engine missing")?;
@@ -269,7 +276,7 @@ fn transcribe_turns(
     if samples.is_empty() || sample_rate == 0 {
         return Ok(String::new());
     }
-    let turns = crate::speakers::merge_adjacent(segments);
+    let turns = crate::speakers::merge_adjacent(&crate::speakers::absorb_overlaps(segments));
     // No speech regions: still paste a normal transcript, without speaker labels.
     if turns.is_empty() {
         return engine.transcribe_samples(samples, sample_rate);
@@ -283,13 +290,35 @@ fn transcribe_turns(
         }
         texts.push(engine.transcribe_samples(&slice, sample_rate)?);
     }
-    let text = crate::speakers::format(&turns, &texts);
-    eprintln!(
-        "dictator: diarization {} turn(s), {} chars",
-        turns.len(),
-        text.chars().count()
+    Ok(crate::speakers::format(&turns, &texts))
+}
+
+fn note_diarization(segments: &[crate::speakers::Segment]) {
+    let mut speakers: Vec<i32> = segments.iter().map(|segment| segment.speaker).collect();
+    speakers.sort_unstable();
+    speakers.dedup();
+    let spans = segments
+        .iter()
+        .map(|segment| {
+            format!(
+                "{:.2}-{:.2}:{}",
+                segment.start, segment.end, segment.speaker
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let message = format!(
+        "segments={} speakers={} [{}]",
+        segments.len(),
+        speakers.len(),
+        spans
     );
-    Ok(text)
+    eprintln!("dictator: diarization {message}");
+    let mut path = dirs::config_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    path.push("dictator");
+    let _ = std::fs::create_dir_all(&path);
+    path.push("diarization.log");
+    let _ = std::fs::write(path, message + "\n");
 }
 
 #[cfg(test)]

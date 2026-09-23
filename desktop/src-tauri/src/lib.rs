@@ -416,7 +416,12 @@ fn refresh_tray_on_main(app: &AppHandle) {
 
 fn tray_image(status: AppStatus) -> Image<'static> {
     let bytes: &[u8] = match status {
+        // macOS: black template so the menu bar tints it. Windows/Linux: same
+        // green as the settings status pip — black vanishes on a dark tray.
+        #[cfg(target_os = "macos")]
         AppStatus::Idle => include_bytes!("../icons/tray-idle.png"),
+        #[cfg(not(target_os = "macos"))]
+        AppStatus::Idle => include_bytes!("../icons/tray-idle-windows.png"),
         AppStatus::Recording => include_bytes!("../icons/tray-recording.png"),
         AppStatus::Transcribing => include_bytes!("../icons/tray-transcribing.png"),
     };

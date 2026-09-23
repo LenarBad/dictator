@@ -6,18 +6,25 @@ use std::path::{Path, PathBuf};
 use sherpa_onnx::{
     FastClusteringConfig, OfflineSpeakerDiarization, OfflineSpeakerDiarizationConfig,
     OfflineSpeakerSegmentationModelConfig, OfflineSpeakerSegmentationPyannoteModelConfig,
-    SpeakerEmbeddingExtractorConfig,
+    SpeakerEmbeddingExtractor, SpeakerEmbeddingExtractorConfig,
 };
 
 use crate::speakers::Segment;
 use crate::wav;
 
 const NUM_THREADS: i32 = 2;
+/// A voice with less than this much speech can be the same person as a longer turn
+/// whose embedding sherpa put in another cluster (a short «И нам это надо?» before
+/// the same guest speaks at length).
+const SHORT_SPEAKER_SECONDS: f64 = 2.0;
+const SHORT_SPEAKER_MAX_DISTANCE: f64 = 0.65;
+const EMBED_MAX_SECONDS: f64 = 8.0;
 
 pub struct Diarizer {
     stub: bool,
     model_dir: PathBuf,
     inner: Option<OfflineSpeakerDiarization>,
+    embedder: Option<SpeakerEmbeddingExtractor>,
 }
 
 impl Diarizer {
@@ -29,6 +36,7 @@ impl Diarizer {
             stub: false,
             model_dir: resolve_model_dir()?,
             inner: None,
+            embedder: None,
         })
     }
 
@@ -37,6 +45,7 @@ impl Diarizer {
             stub: true,
             model_dir: PathBuf::new(),
             inner: None,
+            embedder: None,
         }
     }
 
@@ -88,6 +97,29 @@ impl Diarizer {
         Ok(segments)
     }
 
+    /// Give a short fragment the speaker id of the longer turn it actually matches.
+    pub fn align_voices(
+        &mut self,
+        samples: &[f32],
+        sample_rate: u32,
+        segments: &[Segment],
+    ) -> Vec<Segment> {
+        let absorbed = crate::speakers::absorb_overlaps(segments);
+        if self.stub || samples.is_empty() || sample_rate == 0 {
+            return absorbed;
+        }
+        let Ok(embedder) = self.ensure_embedder() else {
+            return absorbed;
+        };
+        let prints = speaker_prints(embedder, samples, sample_rate, &absorbed);
+        crate::speakers::link_short_speakers(
+            &absorbed,
+            &prints,
+            SHORT_SPEAKER_SECONDS,
+            SHORT_SPEAKER_MAX_DISTANCE,
+        )
+    }
+
     fn ensure(&mut self) -> Result<&OfflineSpeakerDiarization, String> {
         if self.stub {
             return Err("stub diarizer has no model".into());
@@ -97,6 +129,82 @@ impl Diarizer {
         }
         Ok(self.inner.as_ref().expect("diarizer"))
     }
+
+    fn ensure_embedder(&mut self) -> Result<&SpeakerEmbeddingExtractor, String> {
+        if self.embedder.is_none() {
+            let path = self.model_dir.join("embedding.onnx");
+            if !path.is_file() {
+                return Err(missing_models());
+            }
+            let config = SpeakerEmbeddingExtractorConfig {
+                model: Some(path.to_string_lossy().into_owned()),
+                num_threads: NUM_THREADS,
+                debug: false,
+                provider: Some("cpu".into()),
+            };
+            self.embedder = SpeakerEmbeddingExtractor::create(&config);
+        }
+        self.embedder.as_ref().ok_or_else(|| {
+            format!(
+                "Не удалось загрузить отпечаток голоса из {}",
+                self.model_dir.display()
+            )
+        })
+    }
+}
+
+fn speaker_prints(
+    embedder: &SpeakerEmbeddingExtractor,
+    samples: &[f32],
+    sample_rate: u32,
+    segments: &[Segment],
+) -> Vec<(i32, Vec<f32>)> {
+    let mut speakers: Vec<i32> = segments.iter().map(|segment| segment.speaker).collect();
+    speakers.sort_unstable();
+    speakers.dedup();
+    speakers
+        .into_iter()
+        .filter_map(|speaker| {
+            let segment = segments
+                .iter()
+                .filter(|segment| segment.speaker == speaker)
+                .max_by(|left, right| {
+                    (left.end - left.start)
+                        .partial_cmp(&(right.end - right.start))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })?;
+            let audio = embed_window(samples, sample_rate, segment);
+            let embedding = embed(embedder, &audio, sample_rate)?;
+            Some((speaker, embedding))
+        })
+        .collect()
+}
+
+fn embed_window(samples: &[f32], sample_rate: u32, segment: &Segment) -> Vec<f32> {
+    let slice = wav::slice_seconds(samples, sample_rate, segment.start, segment.end);
+    let max_len = (EMBED_MAX_SECONDS * f64::from(sample_rate)) as usize;
+    if slice.len() <= max_len || max_len == 0 {
+        return slice;
+    }
+    let start = (slice.len() - max_len) / 2;
+    slice[start..start + max_len].to_vec()
+}
+
+fn embed(
+    embedder: &SpeakerEmbeddingExtractor,
+    samples: &[f32],
+    sample_rate: u32,
+) -> Option<Vec<f32>> {
+    if samples.is_empty() {
+        return None;
+    }
+    let stream = embedder.create_stream()?;
+    stream.accept_waveform(sample_rate as i32, samples);
+    stream.input_finished();
+    if !embedder.is_ready(&stream) {
+        return None;
+    }
+    embedder.compute(&stream)
 }
 
 fn load_diarizer(model_dir: &Path) -> Result<OfflineSpeakerDiarization, String> {
@@ -126,11 +234,14 @@ fn load_diarizer(model_dir: &Path) -> Result<OfflineSpeakerDiarization, String> 
         },
         clustering: FastClusteringConfig {
             num_clusters: -1,
+            // Sherpa default. 0.4 split one voice across pauses into several speakers.
             threshold: 0.5,
             compute_confidence: false,
         },
-        min_duration_on: 0.3,
-        min_duration_off: 0.5,
+        // Keep a short reply, but bridge only a breath — not the next person.
+        // Sherpa's 0.5 off-gap glued a fast dialogue into one speaker.
+        min_duration_on: 0.2,
+        min_duration_off: 0.15,
     };
 
     OfflineSpeakerDiarization::create(&config).ok_or_else(|| {
