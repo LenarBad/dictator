@@ -17,6 +17,7 @@ import io.lenar.dictator.settings.SetupActivity
 import io.lenar.dictator.settings.SetupGate
 import io.lenar.dictator.stt.ISttService
 import io.lenar.dictator.stt.SttContract
+import io.lenar.dictator.stt.SttService
 
 /**
  * QS tile. Always clickable (never [Tile.STATE_UNAVAILABLE] — that swallows taps).
