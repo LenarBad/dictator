@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Handler
@@ -16,6 +17,7 @@ import android.os.RemoteCallbackList
 import android.os.RemoteException
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import io.lenar.dictator.R
 import io.lenar.dictator.settings.SetupActivity
 import java.util.concurrent.Executors
@@ -93,8 +95,12 @@ class SttService : Service() {
         return false
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
-        START_NOT_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            mainHandler.post { stopSession() }
+        }
+        return START_NOT_STICKY
+    }
 
     override fun onDestroy() {
         if (recorder?.isRunning() == true) {
@@ -118,7 +124,7 @@ class SttService : Service() {
         activeSource = source
         try {
             ensureNotificationChannel()
-            val notification = buildNotification(getString(R.string.notif_recording))
+            val notification = buildNotification(getString(R.string.notif_recording), stopAction = true)
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
@@ -146,7 +152,7 @@ class SttService : Service() {
         val rec = recorder
         recorder = null
         setStatus(SttContract.STATUS_TRANSCRIBING)
-        updateNotification(getString(R.string.notif_transcribing))
+        updateNotification(getString(R.string.notif_transcribing), stopAction = false)
         worker.execute {
             val samples =
                 try {
@@ -289,7 +295,7 @@ class SttService : Service() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun buildNotification(content: String): Notification {
+    private fun buildNotification(content: String, stopAction: Boolean): Notification {
         val launch =
             PendingIntent.getActivity(
                 this,
@@ -297,19 +303,30 @@ class SttService : Service() {
                 Intent(this, SetupActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(content)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentIntent(launch)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .build()
+        val builder =
+            NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText(content)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentIntent(launch)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+        if (stopAction) {
+            val stop =
+                PendingIntent.getForegroundService(
+                    this,
+                    1,
+                    Intent(this, SttService::class.java).setAction(ACTION_STOP),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+            builder.addAction(0, getString(R.string.tile_session_stop), stop)
+        }
+        return builder.build()
     }
 
-    private fun updateNotification(content: String) {
+    private fun updateNotification(content: String, stopAction: Boolean) {
         val manager = getSystemService(NotificationManager::class.java) ?: return
-        manager.notify(NOTIFICATION_ID, buildNotification(content))
+        manager.notify(NOTIFICATION_ID, buildNotification(content, stopAction))
     }
 
     private fun showResultNotification(text: String, title: String) {
@@ -330,5 +347,11 @@ class SttService : Service() {
         private const val CHANNEL_ID = "dictator"
         private const val NOTIFICATION_ID = 42
         private const val RESULT_NOTIFICATION_ID = 43
+        private const val ACTION_STOP = "io.lenar.dictator.stt.STOP"
+
+        /** Marks [:stt] started so a tile session survives dialog dismiss. */
+        fun ensureStarted(context: Context) {
+            ContextCompat.startForegroundService(context, Intent(context, SttService::class.java))
+        }
     }
 }

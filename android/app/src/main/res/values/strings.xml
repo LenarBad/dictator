@@ -55,6 +55,7 @@
     <string name="tile_session_transcribing">Распознавание…</string>
     <string name="tile_session_hint">Текст попадёт в буфер — вставьте в любое поле</string>
     <string name="tile_session_stop">Стоп</string>
+    <string name="tile_session_collapse">Свернуть</string>
 
     <string name="recog_label">Dictator</string>
 </resources>

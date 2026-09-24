@@ -36,12 +36,20 @@ import io.lenar.dictator.stt.SttService
  * shade on OEM skins, and counts as visible UI for microphone FGS on Android 14+.
  */
 class DictatorTileService : TileService() {
-    private val mainHandler = Handler(Looper.getMainLooper())
     private var session: SessionController? = null
+    private var clickBusy = false
 
     override fun onStartListening() {
         super.onStartListening()
-        refreshTile(active = session != null)
+        if (session != null) {
+            refreshTile(SttContract.STATUS_RECORDING)
+            return
+        }
+        if (!SetupGate.isVoiceReady(this)) {
+            refreshTile(SttContract.STATUS_IDLE)
+            return
+        }
+        withService { api -> refreshTile(api.status()) }
     }
 
     override fun onClick() {
@@ -79,15 +87,36 @@ class DictatorTileService : TileService() {
             session?.requestStop()
             return
         }
-
-        try {
-            val controller = SessionController(this) {
-                session = null
-                refreshTile(active = false)
+        if (clickBusy) return
+        clickBusy = true
+        withService { api ->
+            clickBusy = false
+            when (api.status()) {
+                SttContract.STATUS_RECORDING -> {
+                    api.stop()
+                    refreshTile(SttContract.STATUS_TRANSCRIBING)
+                }
+                SttContract.STATUS_TRANSCRIBING -> refreshTile(SttContract.STATUS_TRANSCRIBING)
+                else -> openSessionDialog()
             }
+        }
+    }
+
+    private fun openSessionDialog() {
+        try {
+            val controller =
+                SessionController(this) {
+                    session = null
+                    if (SetupGate.isVoiceReady(this)) {
+                        withService { api -> refreshTile(api.status()) }
+                    } else {
+                        refreshTile(SttContract.STATUS_IDLE)
+                    }
+                }
             session = controller
             showDialog(controller.dialog)
-            refreshTile(active = true)
+            controller.attach()
+            refreshTile(SttContract.STATUS_RECORDING)
         } catch (err: Exception) {
             session = null
             Toast.makeText(
@@ -131,18 +160,46 @@ class DictatorTileService : TileService() {
         startActivityAndCollapse(intent)
     }
 
-    private fun refreshTile(active: Boolean) {
+    private fun refreshTile(status: Int) {
         val tile = qsTile ?: return
+        val busy =
+            status == SttContract.STATUS_RECORDING || status == SttContract.STATUS_TRANSCRIBING
         // Never UNAVAILABLE: many OEMs drop onClick entirely in that state.
-        tile.state = if (active) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+        tile.state = if (busy) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.label = getString(R.string.tile_label)
         tile.subtitle =
             when {
                 !SetupGate.isVoiceReady(this) -> getString(R.string.tile_subtitle_setup)
-                active -> getString(R.string.tile_subtitle_recording)
+                status == SttContract.STATUS_RECORDING -> getString(R.string.tile_subtitle_recording)
+                status == SttContract.STATUS_TRANSCRIBING -> getString(R.string.tile_subtitle_transcribing)
                 else -> getString(R.string.tile_subtitle_idle)
             }
         tile.updateTile()
+    }
+
+    private fun withService(block: (ISttService) -> Unit) {
+        val connection =
+            object : ServiceConnection {
+                override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                    val api = ISttService.Stub.asInterface(service)
+                    try {
+                        block(api)
+                    } catch (_: RemoteException) {
+                    } finally {
+                        try {
+                            unbindService(this)
+                        } catch (_: IllegalArgumentException) {
+                        }
+                    }
+                }
+
+                override fun onServiceDisconnected(name: ComponentName?) = Unit
+            }
+        try {
+            bindService(Intent(this, SttService::class.java), connection, Context.BIND_AUTO_CREATE)
+        } catch (_: Exception) {
+            clickBusy = false
+        }
     }
 
     /**
@@ -158,10 +215,12 @@ class DictatorTileService : TileService() {
         private var bound = false
         private var started = false
         private var closed = false
+        private var detachable = false
 
         private val txtStatus: TextView
         private val levelBar: ProgressBar
         private val btnStop: MaterialButton
+        private val btnCollapse: MaterialButton
         val dialog: Dialog
 
         private val sttCallback =
@@ -172,10 +231,12 @@ class DictatorTileService : TileService() {
                             SttContract.STATUS_RECORDING -> {
                                 txtStatus.setText(R.string.tile_session_recording)
                                 btnStop.isEnabled = true
+                                btnCollapse.isEnabled = detachable
                             }
                             SttContract.STATUS_TRANSCRIBING -> {
                                 txtStatus.setText(R.string.tile_session_transcribing)
                                 btnStop.isEnabled = false
+                                btnCollapse.isEnabled = false
                             }
                         }
                     }
@@ -226,6 +287,12 @@ class DictatorTileService : TileService() {
                         api.register(sttCallback)
                         if (!started) {
                             started = true
+                            try {
+                                SttService.ensureStarted(tile)
+                                detachable = true
+                            } catch (_: Exception) {
+                                detachable = false
+                            }
                             api.start(SttContract.SOURCE_TILE)
                         }
                     } catch (err: RemoteException) {
@@ -251,7 +318,9 @@ class DictatorTileService : TileService() {
             txtStatus = view.findViewById(R.id.txtStatus)
             levelBar = view.findViewById(R.id.levelBar)
             btnStop = view.findViewById(R.id.btnStop)
+            btnCollapse = view.findViewById(R.id.btnCollapse)
             btnStop.setOnClickListener { requestStop() }
+            btnCollapse.setOnClickListener { collapse() }
 
             dialog =
                 Dialog(themed, R.style.Theme_Dictator_TileSession).apply {
@@ -264,6 +333,9 @@ class DictatorTileService : TileService() {
                     }
                 }
 
+        }
+
+        fun attach() {
             tile.bindService(
                 Intent(tile, SttService::class.java),
                 connection,
@@ -271,8 +343,21 @@ class DictatorTileService : TileService() {
             )
         }
 
+        private fun collapse() {
+            if (!detachable || closed) return
+            closed = true
+            btnCollapse.isEnabled = false
+            if (dialog.isShowing) {
+                dialog.dismiss()
+            } else {
+                release()
+                onClosed()
+            }
+        }
+
         fun requestStop() {
             btnStop.isEnabled = false
+            btnCollapse.isEnabled = false
             txtStatus.setText(R.string.tile_session_transcribing)
             try {
                 val api = stt

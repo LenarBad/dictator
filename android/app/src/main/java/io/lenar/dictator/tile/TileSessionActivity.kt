@@ -39,6 +39,8 @@ class TileSessionActivity : AppCompatActivity() {
     private lateinit var txtStatus: TextView
     private lateinit var levelBar: ProgressBar
     private lateinit var btnStop: MaterialButton
+    private lateinit var btnCollapse: MaterialButton
+    private var detachable = false
 
     private val sttCallback =
         object : ISttCallback.Stub() {
@@ -95,6 +97,12 @@ class TileSessionActivity : AppCompatActivity() {
                     api.register(sttCallback)
                     if (!started) {
                         started = true
+                        try {
+                            SttService.ensureStarted(this@TileSessionActivity)
+                            detachable = true
+                        } catch (_: Exception) {
+                            detachable = false
+                        }
                         api.start(SttContract.SOURCE_TILE)
                     }
                 } catch (_: RemoteException) {
@@ -121,7 +129,9 @@ class TileSessionActivity : AppCompatActivity() {
         txtStatus = findViewById(R.id.txtStatus)
         levelBar = findViewById(R.id.levelBar)
         btnStop = findViewById(R.id.btnStop)
+        btnCollapse = findViewById(R.id.btnCollapse)
         btnStop.setOnClickListener { requestStop() }
+        btnCollapse.setOnClickListener { collapse() }
 
         if (!SetupGate.isVoiceReady(this)) {
             Toast.makeText(this, R.string.tile_setup_required, Toast.LENGTH_SHORT).show()
@@ -149,8 +159,15 @@ class TileSessionActivity : AppCompatActivity() {
         requestStop()
     }
 
+    private fun collapse() {
+        if (!detachable || finishing) return
+        finishing = true
+        finish()
+    }
+
     private fun requestStop() {
         btnStop.isEnabled = false
+        btnCollapse.isEnabled = false
         txtStatus.setText(R.string.tile_session_transcribing)
         try {
             stt?.stop()
@@ -164,10 +181,12 @@ class TileSessionActivity : AppCompatActivity() {
             SttContract.STATUS_RECORDING -> {
                 txtStatus.setText(R.string.tile_session_recording)
                 btnStop.isEnabled = true
+                btnCollapse.isEnabled = detachable
             }
             SttContract.STATUS_TRANSCRIBING -> {
                 txtStatus.setText(R.string.tile_session_transcribing)
                 btnStop.isEnabled = false
+                btnCollapse.isEnabled = false
             }
             else -> Unit
         }
