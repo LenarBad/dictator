@@ -79,21 +79,12 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          PREV="$(git tag -l 'v[0-9]*' --sort=-v:refname | awk -v t="$TAG" '$0 != t { print; exit }')"
-          {
-            echo "## Что нового"
-            echo
-            if [[ -n "${PREV}" ]]; then
-              echo "https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
-            else
-              echo "Первый релиз."
-            fi
-            echo
-            echo "## Установка"
-            echo
-            echo "- Mac: \`Dictator-macos-aarch64.app.zip\` — [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md)"
-            echo "- Windows: \`Dictator-windows-x64.exe\` — [docs/INSTALL.md](https://github.com/${{ github.repository }}/blob/main/docs/INSTALL.md)"
-          } > /tmp/release-notes.md
+          NOTE="$(git for-each-ref --format='%(contents:body)' "refs/tags/${TAG}" | sed -n '/./,$p')"
+          if [[ -z "${NOTE}" ]]; then
+            echo "Tag ${TAG} has no release note. Pass it as the second -m of git tag -a." >&2
+            exit 1
+          fi
+          printf '%s\n' "${NOTE}" > /tmp/release-notes.md
           echo "wrote $(wc -l < /tmp/release-notes.md) lines"
 
       - name: Upload artifact

@@ -96,6 +96,11 @@ class SttService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // startForegroundService shows the system "Starting FGS…" placeholder until this
+        // returns. Do it before any other work, including the tile's later AIDL start().
+        if (!promoteToForeground(getString(R.string.notif_recording))) {
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             mainHandler.post { stopSession() }
         }
@@ -123,14 +128,7 @@ class SttService : Service() {
         }
         activeSource = source
         try {
-            ensureNotificationChannel()
-            val notification = buildNotification(getString(R.string.notif_recording), stopAction = true)
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
-            )
+            if (!promoteToForeground(getString(R.string.notif_recording))) return
             val rec =
                 AudioRecorder(
                     onLevel = { level -> broadcastLevel(level) },
@@ -282,6 +280,25 @@ class SttService : Service() {
     private fun copyToClipboard(text: String) {
         val clipboard = getSystemService(ClipboardManager::class.java) ?: return
         clipboard.setPrimaryClip(ClipData.newPlainText("dictator", text))
+    }
+
+    /** @return false when Android rejected the microphone FGS (app not in the foreground). */
+    private fun promoteToForeground(content: String): Boolean {
+        return try {
+            ensureNotificationChannel()
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                buildNotification(content, stopAction = true),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+            )
+            true
+        } catch (err: Exception) {
+            setStatus(SttContract.STATUS_IDLE)
+            broadcastError(err.message ?: "mic failed")
+            stopSelf()
+            false
+        }
     }
 
     private fun ensureNotificationChannel() {

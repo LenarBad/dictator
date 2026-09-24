@@ -35,6 +35,7 @@ class TileSessionActivity : AppCompatActivity() {
     private var bound = false
     private var started = false
     private var finishing = false
+    private var foreground = false
 
     private lateinit var txtStatus: TextView
     private lateinit var levelBar: ProgressBar
@@ -95,15 +96,8 @@ class TileSessionActivity : AppCompatActivity() {
                 bound = true
                 try {
                     api.register(sttCallback)
-                    if (!started) {
-                        started = true
-                        try {
-                            SttService.ensureStarted(this@TileSessionActivity)
-                            detachable = true
-                        } catch (_: Exception) {
-                            detachable = false
-                        }
-                        api.start(SttContract.SOURCE_TILE)
+                    if (foreground) {
+                        beginRecording()
                     }
                 } catch (_: RemoteException) {
                     Toast.makeText(
@@ -120,6 +114,39 @@ class TileSessionActivity : AppCompatActivity() {
                 bound = false
             }
         }
+
+    override fun onStart() {
+        super.onStart()
+        if (foreground || finishing || isFinishing) return
+        try {
+            SttService.ensureStarted(this)
+            detachable = true
+            foreground = true
+            if (::btnCollapse.isInitialized) {
+                btnCollapse.isEnabled = btnStop.isEnabled
+            }
+            if (bound) beginRecording()
+        } catch (err: Exception) {
+            Toast.makeText(
+                this,
+                err.message ?: getString(R.string.ime_stt_unavailable),
+                Toast.LENGTH_LONG,
+            ).show()
+            finishSession()
+        }
+    }
+
+    private fun beginRecording() {
+        if (started || finishing) return
+        val api = stt ?: return
+        started = true
+        try {
+            api.start(SttContract.SOURCE_TILE)
+        } catch (_: RemoteException) {
+            Toast.makeText(this, R.string.ime_stt_unavailable, Toast.LENGTH_SHORT).show()
+            finishSession()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

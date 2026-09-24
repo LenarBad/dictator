@@ -94,20 +94,12 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VER="${TAG#android-v}"
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
-          PREV="$(git tag -l 'android-v*' --sort=-v:refname | awk -v t="$TAG" '$0 != t { print; exit }')"
-          {
-            echo "## Что нового"
-            echo
-            if [[ -n "${PREV}" ]]; then
-              echo "https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
-            else
-              echo "Первый релиз Android."
-            fi
-            echo
-            echo "## Установка"
-            echo
-            echo "- Android: \`Dictator-android-arm64.apk\`"
-          } > /tmp/release-notes.md
+          NOTE="$(git for-each-ref --format='%(contents:body)' "refs/tags/${TAG}" | sed -n '/./,$p')"
+          if [[ -z "${NOTE}" ]]; then
+            echo "Tag ${TAG} has no release note. Pass it as the second -m of git tag -a." >&2
+            exit 1
+          fi
+          printf '%s\n' "${NOTE}" > /tmp/release-notes.md
 
       - name: Attach APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
