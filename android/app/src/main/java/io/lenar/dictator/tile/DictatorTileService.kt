@@ -37,19 +37,57 @@ import io.lenar.dictator.stt.SttService
  */
 class DictatorTileService : TileService() {
     private var session: SessionController? = null
-    private var clickBusy = false
+    private var knownStatus: Int = SttContract.STATUS_IDLE
+    private var listeningApi: ISttService? = null
+    private var listeningBound = false
+
+    private val listeningConnection =
+        object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                val api = ISttService.Stub.asInterface(service)
+                listeningApi = api
+                if (session != null) return
+                try {
+                    knownStatus = api.status()
+                    refreshTile(knownStatus)
+                } catch (_: RemoteException) {
+                    listeningApi = null
+                }
+            }
+
+            override fun onServiceDisconnected(name: ComponentName?) {
+                listeningApi = null
+                if (session == null) {
+                    knownStatus = SttContract.STATUS_IDLE
+                    refreshTile(knownStatus)
+                }
+            }
+        }
 
     override fun onStartListening() {
         super.onStartListening()
-        if (session != null) {
-            refreshTile(SttContract.STATUS_RECORDING)
-            return
-        }
         if (!SetupGate.isVoiceReady(this)) {
-            refreshTile(SttContract.STATUS_IDLE)
+            knownStatus = SttContract.STATUS_IDLE
+            refreshTile(knownStatus)
             return
         }
-        withService { api -> refreshTile(api.status()) }
+        refreshTile(knownStatus)
+        if (listeningBound) return
+        try {
+            bindService(
+                Intent(this, SttService::class.java),
+                listeningConnection,
+                Context.BIND_AUTO_CREATE,
+            )
+            listeningBound = true
+        } catch (_: Exception) {
+            listeningBound = false
+        }
+    }
+
+    override fun onStopListening() {
+        unbindListening()
+        super.onStopListening()
     }
 
     override fun onClick() {
@@ -65,6 +103,7 @@ class DictatorTileService : TileService() {
     override fun onDestroy() {
         session?.release()
         session = null
+        unbindListening()
         super.onDestroy()
     }
 
@@ -87,31 +126,43 @@ class DictatorTileService : TileService() {
             session?.requestStop()
             return
         }
-        if (clickBusy) return
-        clickBusy = true
-        withService { api ->
-            clickBusy = false
-            when (api.status()) {
-                SttContract.STATUS_RECORDING -> {
-                    api.stop()
-                    refreshTile(SttContract.STATUS_TRANSCRIBING)
-                }
-                SttContract.STATUS_TRANSCRIBING -> refreshTile(SttContract.STATUS_TRANSCRIBING)
-                else -> openSessionDialog()
+        // showDialog only works inside this click, so the status read must be sync.
+        val api = listeningApi
+        val status =
+            try {
+                api?.status()
+            } catch (_: RemoteException) {
+                null
             }
+        when (status) {
+            SttContract.STATUS_RECORDING -> {
+                try {
+                    api?.stop()
+                } catch (_: RemoteException) {
+                }
+                knownStatus = SttContract.STATUS_TRANSCRIBING
+                refreshTile(knownStatus)
+            }
+            SttContract.STATUS_TRANSCRIBING -> {
+                knownStatus = SttContract.STATUS_TRANSCRIBING
+                refreshTile(knownStatus)
+            }
+            else -> openSessionDialog()
         }
     }
 
     private fun openSessionDialog() {
         try {
             val controller =
-                SessionController(this) {
+                SessionController(this) { stillRecording ->
                     session = null
-                    if (SetupGate.isVoiceReady(this)) {
-                        withService { api -> refreshTile(api.status()) }
-                    } else {
-                        refreshTile(SttContract.STATUS_IDLE)
-                    }
+                    knownStatus =
+                        if (stillRecording) {
+                            SttContract.STATUS_RECORDING
+                        } else {
+                            SttContract.STATUS_IDLE
+                        }
+                    refreshTile(knownStatus)
                 }
             session = controller
             showDialog(controller.dialog)
@@ -177,28 +228,13 @@ class DictatorTileService : TileService() {
         tile.updateTile()
     }
 
-    private fun withService(block: (ISttService) -> Unit) {
-        val connection =
-            object : ServiceConnection {
-                override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-                    val api = ISttService.Stub.asInterface(service)
-                    try {
-                        block(api)
-                    } catch (_: RemoteException) {
-                    } finally {
-                        try {
-                            unbindService(this)
-                        } catch (_: IllegalArgumentException) {
-                        }
-                    }
-                }
-
-                override fun onServiceDisconnected(name: ComponentName?) = Unit
-            }
+    private fun unbindListening() {
+        if (!listeningBound) return
+        listeningBound = false
+        listeningApi = null
         try {
-            bindService(Intent(this, SttService::class.java), connection, Context.BIND_AUTO_CREATE)
-        } catch (_: Exception) {
-            clickBusy = false
+            unbindService(listeningConnection)
+        } catch (_: IllegalArgumentException) {
         }
     }
 
@@ -208,13 +244,14 @@ class DictatorTileService : TileService() {
      */
     private class SessionController(
         private val tile: DictatorTileService,
-        private val onClosed: () -> Unit,
+        private val onClosed: (stillRecording: Boolean) -> Unit,
     ) {
         private val mainHandler = Handler(Looper.getMainLooper())
         private var stt: ISttService? = null
         private var bound = false
         private var started = false
         private var closed = false
+        private var collapsed = false
         private var detachable = false
 
         private val txtStatus: TextView
@@ -287,13 +324,19 @@ class DictatorTileService : TileService() {
                         api.register(sttCallback)
                         if (!started) {
                             started = true
-                            try {
-                                SttService.ensureStarted(tile)
-                                detachable = true
-                            } catch (_: Exception) {
-                                detachable = false
+                            when (api.status()) {
+                                SttContract.STATUS_RECORDING -> api.stop()
+                                SttContract.STATUS_TRANSCRIBING -> close()
+                                else -> {
+                                    try {
+                                        SttService.ensureStarted(tile)
+                                        detachable = true
+                                    } catch (_: Exception) {
+                                        detachable = false
+                                    }
+                                    api.start(SttContract.SOURCE_TILE)
+                                }
                             }
-                            api.start(SttContract.SOURCE_TILE)
                         }
                     } catch (err: RemoteException) {
                         Toast.makeText(
@@ -329,7 +372,7 @@ class DictatorTileService : TileService() {
                     setOnCancelListener { requestStop() }
                     setOnDismissListener {
                         release()
-                        onClosed()
+                        onClosed(collapsed)
                     }
                 }
 
@@ -345,13 +388,14 @@ class DictatorTileService : TileService() {
 
         private fun collapse() {
             if (!detachable || closed) return
+            collapsed = true
             closed = true
             btnCollapse.isEnabled = false
             if (dialog.isShowing) {
                 dialog.dismiss()
             } else {
                 release()
-                onClosed()
+                onClosed(true)
             }
         }
 
@@ -389,7 +433,7 @@ class DictatorTileService : TileService() {
                 dialog.dismiss()
             } else {
                 release()
-                onClosed()
+                onClosed(false)
             }
         }
     }
