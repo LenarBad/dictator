@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="dictator_bg">#FF12141A</color>
+    <color name="dictator_surface">#FF1C1F28</color>
+    <color name="dictator_key">#FF2A2F3A</color>
+    <color name="dictator_key_pressed">#FF3A4150</color>
+    <color name="dictator_accent">#FF5B8DEF</color>
+    <color name="dictator_text">#FFE8EAED</color>
+    <color name="dictator_text_muted">#FF9AA0A6</color>
+    <color name="dictator_ok">#FF3DDC97</color>
+    <color name="dictator_warn">#FFE8A838</color>
+    <color name="ic_launcher_background">#FF12141A</color>
+    <color name="setup_bg">#FFF4F5F7</color>
+    <color name="setup_text">#FF1A1C22</color>
+    <color name="setup_muted">#FF5F6368</color>
+</resources>

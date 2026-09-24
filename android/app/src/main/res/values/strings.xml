@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dictator</string>
+    <string name="ime_label">Dictator</string>
+    <string name="ime_subtype_label">Русский (голос)</string>
+
+    <string name="setup_title">Dictator</string>
+    <string name="setup_subtitle">Голосовой ввод рядом с вашей клавиатурой. Это не замена Gboard: нажатия не читаем.</string>
+    <string name="setup_step_ime">1. Включить Dictator в «Языки и ввод»</string>
+    <string name="setup_open_ime_settings">Открыть настройки ввода</string>
+    <string name="setup_ime_enabled">Dictator включён как клавиатура</string>
+    <string name="setup_ime_disabled">Dictator ещё не включён</string>
+    <string name="setup_step_mic">2. Доступ к микрофону</string>
+    <string name="setup_grant_mic">Разрешить микрофон</string>
+    <string name="setup_mic_granted">Микрофон разрешён</string>
+    <string name="setup_mic_denied">Микрофон нужен для записи</string>
+    <string name="setup_step_notifications">3. Уведомления</string>
+    <string name="setup_grant_notifications">Разрешить уведомления</string>
+    <string name="setup_notifications_granted">Уведомления разрешены</string>
+    <string name="setup_notifications_denied">Нужны для записи из шторки и результата</string>
+    <string name="setup_return_ime">После вставки возвращаться к прежней клавиатуре</string>
+    <string name="setup_how_to">В Telegram: глобус → Dictator → микрофон → говорите → снова микрофон. Текст попадёт в поле (и в буфер).</string>
+    <string name="setup_ready">Готово к голосовому вводу</string>
+
+    <string name="ime_switch">Клавиатура</string>
+    <string name="ime_insert_test">Вставить тест</string>
+    <string name="ime_space">Пробел</string>
+    <string name="ime_backspace">⌫</string>
+    <string name="ime_action_default">Готово</string>
+    <string name="ime_mic_idle">Нажмите и говорите</string>
+    <string name="ime_mic_recording">Слушаю… нажмите ещё раз</string>
+    <string name="ime_mic_busy">Не готово</string>
+    <string name="ime_status_idle">GigaAM · офлайн</string>
+    <string name="ime_status_recording">Запись %1$s</string>
+    <string name="ime_status_transcribing">Распознавание…</string>
+    <string name="ime_status_loading">Модель готовится…</string>
+    <string name="ime_stt_unavailable">Сервис распознавания недоступен</string>
+    <string name="ime_need_mic">Сначала разрешите микрофон в Dictator</string>
+
+    <string name="notif_channel_name">Dictator</string>
+    <string name="notif_recording">Запись…</string>
+    <string name="notif_transcribing">Распознавание…</string>
+    <string name="notif_copied_title">Скопировано</string>
+    <string name="notif_copied_paste_title">Скопировано, вставьте</string>
+    <string name="notif_empty_body">Пусто — говорите дольше</string>
+
+    <string name="tile_label">Dictator</string>
+    <string name="tile_subtitle_idle">Надиктовать в буфер</string>
+    <string name="tile_subtitle_recording">Запись… тап = стоп</string>
+    <string name="tile_subtitle_transcribing">Распознавание…</string>
+    <string name="tile_subtitle_setup">Сначала настройте Dictator</string>
+    <string name="tile_setup_required">Включите Dictator и микрофон в приложении</string>
+    <string name="tile_copied_toast">Скопировано, вставьте</string>
+    <string name="tile_session_recording">Говорите…</string>
+    <string name="tile_session_transcribing">Распознавание…</string>
+    <string name="tile_session_hint">Текст попадёт в буфер — вставьте в любое поле</string>
+    <string name="tile_session_stop">Стоп</string>
+    <string name="tile_session_collapse">Свернуть</string>
+
+    <string name="recog_label">Dictator</string>
+</resources>

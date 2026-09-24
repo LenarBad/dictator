@@ -8,6 +8,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 bash "$ROOT/scripts/fetch-diarize-model.sh"
 
 DEST="$ROOT/desktop/src-tauri/resources/gigaam"
+ANDROID_DEST="$ROOT/android/app/src/main/assets/gigaam"
 URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2"
 ARCHIVE_NAME="sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16.tar.bz2"
 # sha256 of the upstream tar.bz2 (recompute if you bump ARCHIVE_NAME / URL).
@@ -24,6 +25,19 @@ file_sha256() {
   fi
 }
 
+sync_android_assets() {
+  if [[ ! -d "$ROOT/android" ]]; then
+    return 0
+  fi
+  mkdir -p "$ANDROID_DEST"
+  for name in encoder.int8.onnx decoder.onnx joiner.onnx tokens.txt LICENSE; do
+    if [[ -f "$DEST/$name" ]]; then
+      cp "$DEST/$name" "$ANDROID_DEST/$name"
+    fi
+  done
+  echo "fetch-stt-model: synced android assets $(du -sh "$ANDROID_DEST" 2>/dev/null | awk '{print $1}')"
+}
+
 need_fetch=0
 for name in encoder.int8.onnx decoder.onnx joiner.onnx tokens.txt; do
   if [[ ! -f "$DEST/$name" ]]; then
@@ -32,6 +46,7 @@ for name in encoder.int8.onnx decoder.onnx joiner.onnx tokens.txt; do
 done
 if [[ "$need_fetch" -eq 0 ]]; then
   echo "fetch-stt-model: already present $(du -sh "$DEST" | awk '{print $1}')"
+  sync_android_assets
   exit 0
 fi
 
@@ -64,3 +79,4 @@ if [[ -f "$INNER/LICENSE" ]]; then
 fi
 
 echo "fetch-stt-model: done $(du -sh "$DEST" | awk '{print $1}')"
+sync_android_assets
