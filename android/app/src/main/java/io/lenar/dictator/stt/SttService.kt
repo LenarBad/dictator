@@ -20,7 +20,9 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import io.lenar.dictator.R
 import io.lenar.dictator.settings.SetupActivity
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -35,10 +37,18 @@ class SttService : Service() {
 
     @Volatile private var status: Int = SttContract.STATUS_IDLE
     @Volatile private var activeSource: Int = SttContract.SOURCE_IME
+    @Volatile private var sessionId: Int = 0
     @Volatile private var liveGeneration: Int = 0
+    @Volatile private var segmentEpoch: Int = 0
+    @Volatile private var liveChunksEnabled: Boolean = false
     private var recorder: AudioRecorder? = null
+    private val transcriptLock = Any()
+    private val confirmedParts = ArrayList<String>()
+    private val heldParts = ArrayDeque<String>()
     private val liveParts = ArrayList<String>()
     private var liveNextWindow = 0
+    private val pendingSegments = ConcurrentLinkedQueue<PendingSegment>()
+    private val drainScheduled = AtomicBoolean(false)
 
     private val binder =
         object : ISttService.Stub() {
@@ -130,21 +140,30 @@ class SttService : Service() {
             return
         }
         activeSource = source
-        val generation =
-            synchronized(liveParts) {
+        val session =
+            synchronized(transcriptLock) {
+                sessionId++
                 liveGeneration++
+                segmentEpoch++
+                confirmedParts.clear()
+                heldParts.clear()
                 liveParts.clear()
                 liveNextWindow = 0
-                liveGeneration
+                sessionId
             }
+        pendingSegments.clear()
+        liveChunksEnabled = liveChunks && source == SttContract.SOURCE_TILE
         val chunkListener =
-            if (liveChunks && source == SttContract.SOURCE_TILE) {
+            if (liveChunksEnabled) {
                 { snapshot: FloatArray, readyCount: Int ->
+                    val epoch = synchronized(transcriptLock) { segmentEpoch }
                     mainHandler.post {
-                        if (generation != liveGeneration || status != SttContract.STATUS_RECORDING) {
+                        if (epoch != segmentEpoch || session != sessionId ||
+                            status != SttContract.STATUS_RECORDING
+                        ) {
                             return@post
                         }
-                        scheduleLiveWindows(snapshot, readyCount, generation)
+                        scheduleLiveWindows(snapshot, readyCount, epoch)
                     }
                     Unit
                 }
@@ -156,7 +175,8 @@ class SttService : Service() {
             val rec =
                 AudioRecorder(
                     onLevel = { level -> broadcastLevel(level) },
-                    onMaxDuration = { mainHandler.post { stopSession() } },
+                    onSessionLimit = { mainHandler.post { stopSession() } },
+                    onSegment = { samples -> handoffSegment(session, samples) },
                     onCompleteWindows = chunkListener,
                 )
             recorder = rec
@@ -170,13 +190,67 @@ class SttService : Service() {
         }
     }
 
-    private fun scheduleLiveWindows(snapshot: FloatArray, readyCount: Int, generation: Int) {
-        val from = liveNextWindow
-        if (from >= readyCount) return
-        liveNextWindow = readyCount
+    private fun handoffSegment(session: Int, samples: FloatArray) {
+        if (samples.isEmpty() || session != sessionId) return
+        synchronized(transcriptLock) {
+            if (session != sessionId) return
+            heldParts.addLast(liveParts.joinToString(" "))
+            liveParts.clear()
+            liveNextWindow = 0
+            liveGeneration++
+            segmentEpoch++
+        }
+        pendingSegments.add(PendingSegment(session, samples))
+        scheduleDrain()
+    }
+
+    private fun scheduleDrain() {
+        if (!drainScheduled.compareAndSet(false, true)) return
+        worker.execute {
+            try {
+                transcribeQueued()
+            } finally {
+                drainScheduled.set(false)
+                if (pendingSegments.isNotEmpty()) scheduleDrain()
+            }
+        }
+    }
+
+    private fun transcribeQueued() {
+        while (true) {
+            val next = pendingSegments.poll() ?: return
+            if (next.session != sessionId) continue
+            val text =
+                try {
+                    engine.transcribe(next.samples, SttContract.SAMPLE_RATE)
+                } catch (err: Exception) {
+                    mainHandler.post { abortSession(next.session, err.message ?: "transcribe failed") }
+                    return
+                }
+            val preview =
+                synchronized(transcriptLock) {
+                    if (next.session != sessionId) return
+                    if (heldParts.isNotEmpty()) heldParts.removeFirst()
+                    if (text.isNotEmpty()) confirmedParts.add(text)
+                    previewLocked()
+                }
+            publishPreview(next.session, preview)
+        }
+    }
+
+    private fun scheduleLiveWindows(snapshot: FloatArray, readyCount: Int, epoch: Int) {
+        val from: Int
+        val generation: Int
+        synchronized(transcriptLock) {
+            if (epoch != segmentEpoch) return
+            from = liveNextWindow
+            if (from >= readyCount) return
+            liveNextWindow = readyCount
+            generation = liveGeneration
+        }
         worker.execute {
             for (index in from until readyCount) {
-                if (generation != liveGeneration) return@execute
+                if (generation != liveGeneration || epoch != segmentEpoch) return@execute
                 val text =
                     try {
                         engine.transcribe(
@@ -186,54 +260,68 @@ class SttService : Service() {
                     } catch (_: Exception) {
                         ""
                     }
-                val joined =
-                    synchronized(liveParts) {
-                        if (generation != liveGeneration) return@execute
+                val preview =
+                    synchronized(transcriptLock) {
+                        if (generation != liveGeneration || epoch != segmentEpoch) return@execute
                         if (text.isNotEmpty()) liveParts.add(text)
-                        liveParts.joinToString(" ")
+                        previewLocked()
                     }
-                mainHandler.post {
-                    if (generation == liveGeneration && status == SttContract.STATUS_RECORDING) {
-                        broadcastPartial(activeSource, joined)
-                    }
-                }
+                publishPreview(sessionId, preview)
             }
         }
     }
 
+    private fun publishPreview(session: Int, preview: String) {
+        if (!liveChunksEnabled) return
+        mainHandler.post {
+            if (session == sessionId && status == SttContract.STATUS_RECORDING) {
+                broadcastPartial(activeSource, preview)
+            }
+        }
+    }
+
+    private fun previewLocked(): String {
+        val parts = ArrayList<String>(confirmedParts.size + heldParts.size + liveParts.size)
+        confirmedParts.filterTo(parts) { it.isNotEmpty() }
+        heldParts.filterTo(parts) { it.isNotEmpty() }
+        liveParts.filterTo(parts) { it.isNotEmpty() }
+        return parts.joinToString(" ")
+    }
+
     private fun stopSession() {
         if (status != SttContract.STATUS_RECORDING) return
-        synchronized(liveParts) { liveGeneration++ }
+        val session = sessionId
+        synchronized(transcriptLock) {
+            liveGeneration++
+            segmentEpoch++
+            liveParts.clear()
+            liveNextWindow = 0
+        }
         val rec = recorder
         recorder = null
         setStatus(SttContract.STATUS_TRANSCRIBING)
         updateNotification(getString(R.string.notif_transcribing), stopAction = false)
         worker.execute {
-            val samples =
+            val tail =
                 try {
                     rec?.stopAndTakeSamples() ?: FloatArray(0)
                 } catch (err: Exception) {
-                    mainHandler.post {
-                        setStatus(SttContract.STATUS_IDLE)
-                        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-                        broadcastError(err.message ?: "stop failed")
-                        maybeStopIfUnbound()
-                    }
+                    mainHandler.post { abortSession(session, err.message ?: "stop failed") }
                     return@execute
                 }
+            if (tail.isNotEmpty()) pendingSegments.add(PendingSegment(session, tail))
+            try {
+                transcribeQueued()
+            } catch (_: Exception) {
+                return@execute
+            }
             val text =
-                try {
-                    engine.transcribe(samples, SttContract.SAMPLE_RATE)
-                } catch (err: Exception) {
-                    mainHandler.post {
-                        setStatus(SttContract.STATUS_IDLE)
-                        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-                        broadcastError(err.message ?: "transcribe failed")
-                        maybeStopIfUnbound()
-                    }
-                    return@execute
+                synchronized(transcriptLock) {
+                    if (session != sessionId) return@execute
+                    confirmedParts.joinToString(" ")
                 }
             mainHandler.post {
+                if (session != sessionId) return@post
                 deliverBySource(activeSource, text)
                 broadcastResult(activeSource, text)
                 setStatus(SttContract.STATUS_IDLE)
@@ -241,6 +329,22 @@ class SttService : Service() {
                 maybeStopIfUnbound()
             }
         }
+    }
+
+    private fun abortSession(session: Int, message: String) {
+        if (session != sessionId) return
+        sessionId++
+        val rec = recorder
+        recorder = null
+        pendingSegments.clear()
+        try {
+            rec?.stopAndTakeSamples()
+        } catch (_: Exception) {
+        }
+        setStatus(SttContract.STATUS_IDLE)
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        broadcastError(message)
+        maybeStopIfUnbound()
     }
 
     private fun deliverBySource(source: Int, text: String) {
@@ -430,6 +534,8 @@ class SttService : Service() {
                 .build()
         manager.notify(RESULT_NOTIFICATION_ID, notification)
     }
+
+    private data class PendingSegment(val session: Int, val samples: FloatArray)
 
     companion object {
         private const val CHANNEL_ID = "dictator"
