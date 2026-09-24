@@ -42,6 +42,8 @@ class DictatorRecognitionService : RecognitionService() {
                 }
             }
 
+            override fun onPartial(source: Int, text: String?) = Unit
+
             override fun onLevel(level: Float) {
                 mainHandler.post {
                     try {
@@ -72,7 +74,7 @@ class DictatorRecognitionService : RecognitionService() {
                 try {
                     api.register(sttCallback)
                     if (awaitingResult && activeCallback != null && !cancelled) {
-                        api.start(SttContract.SOURCE_RECOG)
+                        api.start(SttContract.SOURCE_RECOG, false)
                     }
                 } catch (_: RemoteException) {
                     fail(SpeechRecognizer.ERROR_CLIENT)
@@ -98,7 +100,7 @@ class DictatorRecognitionService : RecognitionService() {
         activeCallback = callback
         if (bound) {
             try {
-                stt?.start(SttContract.SOURCE_RECOG)
+                stt?.start(SttContract.SOURCE_RECOG, false)
             } catch (_: RemoteException) {
                 fail(SpeechRecognizer.ERROR_CLIENT)
             }

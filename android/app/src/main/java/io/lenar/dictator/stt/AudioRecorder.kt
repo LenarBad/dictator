@@ -15,10 +15,12 @@ import kotlin.math.sqrt
 class AudioRecorder(
     private val onLevel: (Float) -> Unit,
     private val onMaxDuration: () -> Unit,
+    private val onCompleteWindows: ((snapshot: FloatArray, readyCount: Int) -> Unit)? = null,
 ) {
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
     private val samples = ArrayList<Float>(SttContract.SAMPLE_RATE * 8)
+    private var announcedWindows = 0
 
     @SuppressLint("MissingPermission")
     fun start() {
@@ -72,6 +74,7 @@ class AudioRecorder(
                             synchronized(samples) {
                                 samples.size
                             }
+                        notifyCompleteWindows(size)
                         if (size >= maxSamples) {
                             running.set(false)
                             onMaxDuration()
@@ -101,4 +104,16 @@ class AudioRecorder(
     }
 
     fun isRunning(): Boolean = running.get()
+
+    private fun notifyCompleteWindows(size: Int) {
+        val listener = onCompleteWindows ?: return
+        val ready = Chunker.completeWindowCount(size, SttContract.SAMPLE_RATE)
+        if (ready <= announcedWindows) return
+        announcedWindows = ready
+        val snapshot =
+            synchronized(samples) {
+                samples.toFloatArray()
+            }
+        listener(snapshot, ready)
+    }
 }

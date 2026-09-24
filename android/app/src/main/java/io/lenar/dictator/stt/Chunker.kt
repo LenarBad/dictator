@@ -30,4 +30,29 @@ object Chunker {
         }
         return out
     }
+
+    /** Full 20 s windows already captured. The short tail waits for the final pass. */
+    fun completeWindowCount(sampleCount: Int, sampleRate: Int): Int {
+        if (sampleCount <= 0 || sampleRate <= 0) return 0
+        val chunk = chunkSamples(sampleRate)
+        if (sampleCount < chunk) return 0
+        val hop = hopSamples(sampleRate)
+        return ((sampleCount - chunk) / hop) + 1
+    }
+
+    /** Window [index] using the same hop as [splitForAsr]. */
+    fun windowAt(samples: FloatArray, sampleRate: Int, index: Int): FloatArray {
+        val chunk = chunkSamples(sampleRate)
+        val start = index * hopSamples(sampleRate)
+        if (start >= samples.size) return FloatArray(0)
+        val end = (start + chunk).coerceAtMost(samples.size)
+        return samples.copyOfRange(start, end)
+    }
+
+    private fun chunkSamples(sampleRate: Int) = (CHUNK_SECONDS * sampleRate).toInt()
+
+    private fun hopSamples(sampleRate: Int): Int {
+        val overlap = (OVERLAP_SECONDS * sampleRate).toInt()
+        return (chunkSamples(sampleRate) - overlap).coerceAtLeast(1)
+    }
 }

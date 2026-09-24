@@ -25,6 +25,10 @@ class SetupActivity : AppCompatActivity() {
     private lateinit var btnGrantNotifications: MaterialButton
     private lateinit var labelNotifications: TextView
     private lateinit var switchReturnIme: SwitchCompat
+    private lateinit var switchCloseSession: SwitchCompat
+    private lateinit var switchShowTranscript: SwitchCompat
+    private lateinit var switchLiveChunks: SwitchCompat
+    private lateinit var txtVersion: TextView
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -49,6 +53,10 @@ class SetupActivity : AppCompatActivity() {
         btnGrantNotifications = findViewById(R.id.btnGrantNotifications)
         labelNotifications = findViewById(R.id.labelNotifications)
         switchReturnIme = findViewById(R.id.switchReturnIme)
+        switchCloseSession = findViewById(R.id.switchCloseSession)
+        switchShowTranscript = findViewById(R.id.switchShowTranscript)
+        switchLiveChunks = findViewById(R.id.switchLiveChunks)
+        txtVersion = findViewById(R.id.txtVersion)
 
         btnOpenImeSettings.setOnClickListener {
             startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
@@ -66,6 +74,19 @@ class SetupActivity : AppCompatActivity() {
         switchReturnIme.setOnCheckedChangeListener { _, checked ->
             DictatorPrefs.setReturnToPreviousIme(this, checked)
         }
+        switchCloseSession.isChecked = DictatorPrefs.closeSessionImmediately(this)
+        switchCloseSession.setOnCheckedChangeListener { _, checked ->
+            DictatorPrefs.setCloseSessionImmediately(this, checked)
+        }
+        switchShowTranscript.isChecked = DictatorPrefs.showTranscript(this)
+        switchShowTranscript.setOnCheckedChangeListener { _, checked ->
+            DictatorPrefs.setShowTranscript(this, checked)
+        }
+        switchLiveChunks.isChecked = DictatorPrefs.liveChunks(this)
+        switchLiveChunks.setOnCheckedChangeListener { _, checked ->
+            DictatorPrefs.setLiveChunks(this, checked)
+        }
+        txtVersion.text = getString(R.string.setup_version, appVersionName())
 
         if (Build.VERSION.SDK_INT < 33) {
             labelNotifications.visibility = View.GONE
@@ -129,4 +150,15 @@ class SetupActivity : AppCompatActivity() {
 
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun appVersionName(): String {
+        val info =
+            if (Build.VERSION.SDK_INT >= 33) {
+                packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0)
+            }
+        return info.versionName ?: ""
+    }
 }

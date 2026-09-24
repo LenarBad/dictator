@@ -35,7 +35,10 @@ class SttService : Service() {
 
     @Volatile private var status: Int = SttContract.STATUS_IDLE
     @Volatile private var activeSource: Int = SttContract.SOURCE_IME
+    @Volatile private var liveGeneration: Int = 0
     private var recorder: AudioRecorder? = null
+    private val liveParts = ArrayList<String>()
+    private var liveNextWindow = 0
 
     private val binder =
         object : ISttService.Stub() {
@@ -48,8 +51,8 @@ class SttService : Service() {
                 }
             }
 
-            override fun start(source: Int) {
-                mainHandler.post { startSession(source) }
+            override fun start(source: Int, liveChunks: Boolean) {
+                mainHandler.post { startSession(source, liveChunks) }
             }
 
             override fun stop() {
@@ -117,7 +120,7 @@ class SttService : Service() {
         super.onDestroy()
     }
 
-    private fun startSession(source: Int) {
+    private fun startSession(source: Int, liveChunks: Boolean) {
         if (status == SttContract.STATUS_RECORDING) {
             stopSession()
             return
@@ -127,12 +130,34 @@ class SttService : Service() {
             return
         }
         activeSource = source
+        val generation =
+            synchronized(liveParts) {
+                liveGeneration++
+                liveParts.clear()
+                liveNextWindow = 0
+                liveGeneration
+            }
+        val chunkListener =
+            if (liveChunks && source == SttContract.SOURCE_TILE) {
+                { snapshot: FloatArray, readyCount: Int ->
+                    mainHandler.post {
+                        if (generation != liveGeneration || status != SttContract.STATUS_RECORDING) {
+                            return@post
+                        }
+                        scheduleLiveWindows(snapshot, readyCount, generation)
+                    }
+                    Unit
+                }
+            } else {
+                null
+            }
         try {
             if (!promoteToForeground(getString(R.string.notif_recording))) return
             val rec =
                 AudioRecorder(
                     onLevel = { level -> broadcastLevel(level) },
                     onMaxDuration = { mainHandler.post { stopSession() } },
+                    onCompleteWindows = chunkListener,
                 )
             recorder = rec
             rec.start()
@@ -145,8 +170,40 @@ class SttService : Service() {
         }
     }
 
+    private fun scheduleLiveWindows(snapshot: FloatArray, readyCount: Int, generation: Int) {
+        val from = liveNextWindow
+        if (from >= readyCount) return
+        liveNextWindow = readyCount
+        worker.execute {
+            for (index in from until readyCount) {
+                if (generation != liveGeneration) return@execute
+                val text =
+                    try {
+                        engine.transcribe(
+                            Chunker.windowAt(snapshot, SttContract.SAMPLE_RATE, index),
+                            SttContract.SAMPLE_RATE,
+                        )
+                    } catch (_: Exception) {
+                        ""
+                    }
+                val joined =
+                    synchronized(liveParts) {
+                        if (generation != liveGeneration) return@execute
+                        if (text.isNotEmpty()) liveParts.add(text)
+                        liveParts.joinToString(" ")
+                    }
+                mainHandler.post {
+                    if (generation == liveGeneration && status == SttContract.STATUS_RECORDING) {
+                        broadcastPartial(activeSource, joined)
+                    }
+                }
+            }
+        }
+    }
+
     private fun stopSession() {
         if (status != SttContract.STATUS_RECORDING) return
+        synchronized(liveParts) { liveGeneration++ }
         val rec = recorder
         recorder = null
         setStatus(SttContract.STATUS_TRANSCRIBING)
@@ -241,6 +298,20 @@ class SttService : Service() {
             for (i in 0 until n) {
                 try {
                     callbacks.getBroadcastItem(i).onLevel(level)
+                } catch (_: RemoteException) {
+                }
+            }
+        } finally {
+            callbacks.finishBroadcast()
+        }
+    }
+
+    private fun broadcastPartial(source: Int, text: String) {
+        val n = callbacks.beginBroadcast()
+        try {
+            for (i in 0 until n) {
+                try {
+                    callbacks.getBroadcastItem(i).onPartial(source, text)
                 } catch (_: RemoteException) {
                 }
             }

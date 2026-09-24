@@ -19,6 +19,10 @@
     <string name="setup_notifications_granted">Уведомления разрешены</string>
     <string name="setup_notifications_denied">Нужны для записи из шторки и результата</string>
     <string name="setup_return_ime">После вставки возвращаться к прежней клавиатуре</string>
+    <string name="setup_close_session">Закрывать окно сессии сразу после распознавания</string>
+    <string name="setup_show_transcript">Показывать распознанный текст</string>
+    <string name="setup_live_chunks">Распознавать по частям во время записи</string>
+    <string name="setup_version">Версия %1$s</string>
     <string name="setup_how_to">В Telegram: глобус → Dictator → микрофон → говорите → снова микрофон. Текст попадёт в поле (и в буфер).</string>
     <string name="setup_ready">Готово к голосовому вводу</string>
 
@@ -56,6 +60,8 @@
     <string name="tile_session_hint">Текст попадёт в буфер — вставьте в любое поле</string>
     <string name="tile_session_stop">Стоп</string>
     <string name="tile_session_collapse">Свернуть</string>
+    <string name="tile_session_done">Готово</string>
+    <string name="tile_session_close">Закрыть</string>
 
     <string name="recog_label">Dictator</string>
 </resources>

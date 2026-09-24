@@ -73,6 +73,8 @@ class DictatorImeService : InputMethodService() {
                 }
             }
 
+            override fun onPartial(source: Int, text: String?) = Unit
+
             override fun onResult(source: Int, text: String?) {
                 mainHandler.post { handleResult(text.orEmpty()) }
             }
@@ -205,7 +207,7 @@ class DictatorImeService : InputMethodService() {
             if (status == SttContract.STATUS_RECORDING) {
                 api.stop()
             } else {
-                api.start(SttContract.SOURCE_IME)
+                api.start(SttContract.SOURCE_IME, false)
             }
         } catch (_: RemoteException) {
             Toast.makeText(this, R.string.ime_stt_unavailable, Toast.LENGTH_SHORT).show()
