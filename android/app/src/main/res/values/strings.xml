@@ -51,6 +51,10 @@
     <string name="tile_subtitle_setup">Сначала настройте Dictator</string>
     <string name="tile_setup_required">Включите Dictator и микрофон в приложении</string>
     <string name="tile_copied_toast">Скопировано, вставьте</string>
+    <string name="tile_session_recording">Говорите…</string>
+    <string name="tile_session_transcribing">Распознавание…</string>
+    <string name="tile_session_hint">Текст попадёт в буфер — вставьте в любое поле</string>
+    <string name="tile_session_stop">Стоп</string>
 
     <string name="recog_label">Dictator</string>
 </resources>

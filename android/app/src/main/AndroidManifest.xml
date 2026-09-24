@@ -36,6 +36,16 @@
                 android:resource="@xml/method" />
         </service>
 
+        <activity
+            android:name=".tile.TileSessionActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Dictator.TileSession" />
+
         <service
             android:name=".stt.SttService"
             android:exported="false"
