@@ -13,7 +13,7 @@ Windows — тот же продукт, что macOS: один Tauri-бинар�
 - `Dictator-windows-x64.exe` — NSIS, то, что ставить (подтянет WebView2 Evergreen)
 - `Dictator-windows-x64.zip` — портативная папка, модель внутри
 
-На тестовом ПК не ставить Visual Studio, Rust, Node. Сборщик — GitHub `windows-2022` (`.github/workflows/release-windows.yml`). Тег `v*` кладёт файлы в тот же Release, что Mac; `workflow_dispatch` — только артефакты.
+На тестовом ПК не ставить Visual Studio, Rust, Node. Сборщик — GitHub `windows-2022` (`.github/workflows/release-windows.yml`). Тег `v*` кладёт файлы в тот же Release, что Mac. Android в этот Release не входит: у него тег `android-v*`. `workflow_dispatch` — только артефакты.
 
 ## Тот же сценарий, другие API
 

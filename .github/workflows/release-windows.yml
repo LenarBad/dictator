@@ -1,6 +1,6 @@
 # Build Dictator for Windows x64 and attach NSIS + zip to the GitHub Release.
 #
-# Cut a release:
+# Cut a desktop release (same tag as Mac). Android uses tag android-vX.Y.Z.
 #   git tag v0.1.0
 #   git push origin v0.1.0
 #

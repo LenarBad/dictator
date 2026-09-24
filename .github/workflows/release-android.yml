@@ -1,7 +1,7 @@
-# Build Dictator Android arm64 APK and attach to the GitHub Release.
+# Build Dictator Android arm64 APK and publish a separate GitHub Release.
 #
-# Cut a release (same tag as macOS/Windows):
-#   git tag vX.Y.Z && git push origin vX.Y.Z
+# Cut an Android release (does not build Mac or Windows):
+#   git tag android-vX.Y.Z && git push origin android-vX.Y.Z
 #
 # Or Actions → Release Android → Run workflow for artifacts only (no Release).
 # Phone installs the APK — no Android Studio on the test device.
@@ -10,7 +10,7 @@ name: Release Android
 on:
   push:
     tags:
-      - "v*"
+      - "android-v*"
   workflow_dispatch:
 
 permissions:
@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v4
         with:
@@ -84,9 +86,35 @@ jobs:
           path: Dictator-android-arm64.apk
           if-no-files-found: error
 
+      - name: Compose release notes
+        id: notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#android-v}"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          PREV="$(git tag -l 'android-v*' --sort=-v:refname | awk -v t="$TAG" '$0 != t { print; exit }')"
+          {
+            echo "## Что нового"
+            echo
+            if [[ -n "${PREV}" ]]; then
+              echo "https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
+            else
+              echo "Первый релиз Android."
+            fi
+            echo
+            echo "## Установка"
+            echo
+            echo "- Android: \`Dictator-android-arm64.apk\`"
+          } > /tmp/release-notes.md
+
       - name: Attach APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          name: Android ${{ steps.notes.outputs.version }}
+          body_path: /tmp/release-notes.md
+          make_latest: "false"
           files: Dictator-android-arm64.apk
           fail_on_unmatched_files: true

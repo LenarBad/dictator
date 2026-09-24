@@ -1,6 +1,6 @@
 # Build Dictator.app on Apple Silicon and attach a zip to the GitHub Release.
 #
-# Cut a release:
+# Cut a desktop release (Mac + Windows). Android uses tag android-vX.Y.Z.
 #   git tag v0.1.0
 #   git push origin v0.1.0
 #
@@ -79,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
-          PREV="$(git tag -l 'v*' --sort=-v:refname | awk -v t="$TAG" '$0 != t { print; exit }')"
+          PREV="$(git tag -l 'v[0-9]*' --sort=-v:refname | awk -v t="$TAG" '$0 != t { print; exit }')"
           {
             echo "## Что нового"
             echo

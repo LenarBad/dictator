@@ -101,7 +101,7 @@ SetupActivity                     ← мастер разрешений
 | ABI | только `arm64-v8a` |
 | sherpa | JitPack `com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v1.13.8` (как crate в `Cargo.toml`). Если JitPack на 1.13.8 не соберётся — ближайший `v1.13.x` с тем же `OfflineRecognizer`, версию зафиксировать здесь |
 | UI | ViewBinding + XML. IME **не** импортирует `com.k2fsa.sherpa.onnx` (иначе `loadLibrary` в процессе клавиатуры) |
-| versionName первого APK | `0.1.0` (не путать с desktop 0.2.x). Когда Android войдёт в GitHub Release — пятая точка версии в `.cursor/rules/release.mdc` |
+| versionName | своя линия, сейчас `0.1.0`. Релиз — тег `android-vX.Y.Z`. `versionCode` +1 на каждый Android-релиз после первого |
 
 ### Дерево
 
@@ -204,13 +204,14 @@ Max duration в UI v1 не выносить (константа 180 с). Нет 
 
 - Committed `android/sideload.jks` + пароль в `android/keystore.properties.example` (ad-hoc по смыслу; кто хочет — пересоберёт своим). Либо GitHub secret `ANDROID_KEYSTORE_BASE64` — тогда секрет обязателен до первого артефакта.
 - Workflow `.github/workflows/release-android.yml`: `ubuntu-latest`, JDK 17, `bash scripts/fetch-stt-model.sh`, копия в assets, `./gradlew :app:assembleRelease`, артефакт **`Dictator-android-arm64.apk`**.
-- `on: push` теги `v*` + `workflow_dispatch` (как Windows). Тег кладёт APK в тот же GitHub Release (`softprops` upsert). **Не** `gh release create`.
+- `on: push` теги `android-v*` + `workflow_dispatch`. Тег создаёт отдельный GitHub Release `Android X.Y.Z` (`softprops`, `make_latest: false`). Значок Latest остаётся у десктопа. **Не** `gh release create`.
 - Кэш GigaAM как в `release-windows.yml`; Gradle cache.
 - Тестовый телефон ставит артефакт Actions, не локальный `assemble` как единственную правду.
 
-| | Mac | Windows | Android (план) |
+| | Mac | Windows | Android |
 |---|---|---|---|
 | Workflow | `release-macos.yml` | `release-windows.yml` | `release-android.yml` |
+| Тег | `v*` | `v*` | `android-v*` |
 | Runner | `macos-14` | `windows-2022` | `ubuntu-latest` |
 | Артефакт | `Dictator-macos-aarch64.app.zip` | `Dictator-windows-x64.exe` | `Dictator-android-arm64.apk` |
 
