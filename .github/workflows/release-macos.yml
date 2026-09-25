@@ -79,6 +79,8 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
+          # checkout replaces the annotated tag with a lightweight ref to the commit.
+          git fetch origin "+refs/tags/${TAG}:refs/tags/${TAG}"
           NOTE="$(git for-each-ref --format='%(contents:body)' "refs/tags/${TAG}" | sed -n '/./,$p')"
           if [[ -z "${NOTE}" ]]; then
             echo "Tag ${TAG} has no release note. Pass it as the second -m of git tag -a." >&2
