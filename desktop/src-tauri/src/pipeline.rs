@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -64,27 +66,61 @@ pub fn start_recording(app: &AppHandle) -> Result<AppStatus, String> {
         "Dictator",
         "Запись… Нажмите хоткей или пункт меню, чтобы остановить.",
     );
+    let diarize = state.settings.lock().expect("settings").diarization_enabled;
+    if !diarize {
+        *state.segment_run.lock().expect("segments") = Some(spawn_segment_worker(app.clone()));
+    }
     crate::hud::spawn_ticker(app.clone(), generation);
-    spawn_limit_watch(app.clone(), generation);
+    spawn_segment_watch(app.clone(), generation, diarize);
     Ok(AppStatus::Recording)
 }
 
+/// In-flight segment transcripts for one recording. Absent while diarization
+/// holds the whole session for a single pass at the end.
+pub struct SegmentRun {
+    tx: Sender<Vec<f32>>,
+    parts: Arc<Mutex<Vec<String>>>,
+    error: Arc<Mutex<Option<String>>>,
+    /// Seconds already queued, not including the open microphone buffer.
+    handed_seconds: f64,
+    worker: thread::JoinHandle<()>,
+}
+
 pub fn stop_and_transcribe(app: &AppHandle) -> AppStatus {
+    let state = app.state::<AppState>();
+    let _gate = state.session_gate.lock().expect("session");
+    {
+        let status = state.status.lock().expect("status");
+        if *status != AppStatus::Recording {
+            return *status;
+        }
+    }
     set_status(app, AppStatus::Transcribing);
-    let path = match app
-        .state::<AppState>()
-        .recorder
-        .lock()
-        .expect("recorder")
-        .stop()
+    let run = state.segment_run.lock().expect("segments").take();
+    if let Some(run) = run {
+        let tail = state
+            .recorder
+            .lock()
+            .expect("recorder")
+            .stop_samples()
+            .map(resample_capture);
+        let handed_seconds = run.handed_seconds;
+        drop(_gate);
+        let handle = app.clone();
+        thread::spawn(move || finish_segments(&handle, run, tail, handed_seconds));
+        return AppStatus::Transcribing;
+    }
+    let path = match state.recorder.lock().expect("recorder").stop()
     {
         Ok(path) => path,
         Err(err) => {
+            drop(_gate);
             crate::notify::show("Dictator", &format!("Не удалось остановить запись: {err}"));
             set_status(app, AppStatus::Idle);
             return AppStatus::Idle;
         }
     };
+    drop(_gate);
     let handle = app.clone();
     thread::spawn(move || transcribe_and_deliver(&handle, path));
     AppStatus::Transcribing
@@ -92,13 +128,23 @@ pub fn stop_and_transcribe(app: &AppHandle) -> AppStatus {
 
 pub fn shutdown(app: &AppHandle) {
     let state = app.state::<AppState>();
+    let _gate = state.session_gate.lock().expect("session");
+    *state.record_gen.lock().expect("gen") += 1;
+    *state.status.lock().expect("status") = AppStatus::Idle;
+    let run = state.segment_run.lock().expect("segments").take();
     let recorder = state.recorder.lock().expect("recorder");
     if recorder.is_recording() {
-        if let Ok(path) = recorder.stop() {
+        if run.is_some() {
+            let _ = recorder.stop_samples();
+        } else if let Ok(path) = recorder.stop() {
             let _ = std::fs::remove_file(path);
         }
     }
     drop(recorder);
+    if let Some(run) = run {
+        drop(run.tx);
+        let _ = run.worker.join();
+    }
     *state.engine.lock().expect("engine") = None;
     *state.diarizer.lock().expect("diarizer") = None;
 }
@@ -114,13 +160,12 @@ impl Drop for TempWav {
 
 fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
     let wav = TempWav(path);
-    let settings = app
+    let diarize = app
         .state::<AppState>()
         .settings
         .lock()
         .expect("settings")
-        .clone();
-    let focus = app.state::<AppState>().focus.lock().expect("focus").clone();
+        .diarization_enabled;
     let result = (|| {
         let duration = {
             let reader = hound::WavReader::open(&wav.0).map_err(|err| err.to_string())?;
@@ -131,7 +176,7 @@ fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
             return Ok(());
         }
         ensure_engine(app)?;
-        let text = if settings.diarization_enabled {
+        let text = if diarize {
             ensure_diarizer(app)?;
             transcribe_with_speakers(app, &wav.0)?
         } else {
@@ -140,22 +185,7 @@ fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
             let engine = slot.as_mut().ok_or("STT engine missing")?;
             engine.transcribe(&wav.0)?
         };
-        let text = text.trim().to_string();
-        if text.is_empty() {
-            crate::notify::show("Dictator", "Пустой результат распознавания");
-            return Ok(());
-        }
-        crate::paste::deliver_text(app, &text, settings.paste_enabled, focus.as_ref())?;
-        let preview = if text.chars().count() <= 80 {
-            text.clone()
-        } else {
-            format!("{}…", text.chars().take(77).collect::<String>())
-        };
-        if settings.paste_enabled {
-            crate::notify::show("Dictator", &crate::platform::paste_done_message(&preview));
-        } else {
-            crate::notify::show("Dictator", &format!("Скопировано: {preview}"));
-        }
+        publish_transcript(app, text.trim().to_string());
         Ok(())
     })();
     if let Err(err) = result {
@@ -169,25 +199,242 @@ fn transcribe_and_deliver(app: &AppHandle, path: PathBuf) {
     set_status(app, AppStatus::Idle);
 }
 
-fn spawn_limit_watch(app: AppHandle, generation: u64) {
-    let limit = app
+fn spawn_segment_worker(app: AppHandle) -> SegmentRun {
+    let (tx, rx) = mpsc::channel::<Vec<f32>>();
+    let parts = Arc::new(Mutex::new(Vec::new()));
+    let error = Arc::new(Mutex::new(None));
+    let parts_worker = Arc::clone(&parts);
+    let error_worker = Arc::clone(&error);
+    let worker = thread::Builder::new()
+        .name("dictator-segments".into())
+        .spawn(move || {
+            while let Ok(samples) = rx.recv() {
+                if error_worker.lock().expect("segment error").is_some() {
+                    break;
+                }
+                match transcribe_segment(&app, &samples) {
+                    Ok(text) => {
+                        if !text.is_empty() {
+                            parts_worker.lock().expect("parts").push(text);
+                        }
+                    }
+                    Err(err) => {
+                        *error_worker.lock().expect("segment error") = Some(err);
+                        break;
+                    }
+                }
+            }
+        })
+        .expect("segment thread");
+    SegmentRun {
+        tx,
+        parts,
+        error,
+        handed_seconds: 0.0,
+        worker,
+    }
+}
+
+fn spawn_segment_watch(app: AppHandle, generation: u64, diarize: bool) {
+    thread::spawn(move || {
+        let mut handed_seconds = 0.0;
+        loop {
+            thread::sleep(Duration::from_millis(100));
+            let state = app.state::<AppState>();
+            let _gate = state.session_gate.lock().expect("session");
+            if *state.record_gen.lock().expect("gen") != generation {
+                return;
+            }
+            if *state.status.lock().expect("status") != AppStatus::Recording {
+                return;
+            }
+            let failed = state
+                .segment_run
+                .lock()
+                .expect("segments")
+                .as_ref()
+                .is_some_and(|run| run.error.lock().expect("segment error").is_some());
+            if failed {
+                drop(_gate);
+                cancel_failed_session(&app);
+                return;
+            }
+            let snapshot = state.recorder.lock().expect("recorder").segment_snapshot();
+            let decision = crate::segment::action(
+                snapshot.segment_seconds,
+                handed_seconds,
+                snapshot.silence_seconds,
+                diarize,
+            );
+            match decision {
+                crate::segment::Action::Continue => {}
+                crate::segment::Action::Rotate => match rotate_segment(&state) {
+                    Ok(seconds) => handed_seconds += seconds,
+                    Err(_) => {
+                        drop(_gate);
+                        cancel_failed_session(&app);
+                        return;
+                    }
+                },
+                crate::segment::Action::Stop => {
+                    drop(_gate);
+                    let _ = stop_and_transcribe(&app);
+                    return;
+                }
+            }
+        }
+    });
+}
+
+fn rotate_segment(state: &AppState) -> Result<f64, ()> {
+    let raw = state
+        .recorder
+        .lock()
+        .expect("recorder")
+        .take_segment()
+        .map_err(|_| ())?;
+    let seconds = if raw.capture_rate == 0 {
+        0.0
+    } else {
+        raw.samples.len() as f64 / f64::from(raw.capture_rate)
+    };
+    let samples = resample_capture(raw);
+    if samples.is_empty() {
+        return Ok(seconds);
+    }
+    let mut slot = state.segment_run.lock().expect("segments");
+    let Some(run) = slot.as_mut() else {
+        return Err(());
+    };
+    run.handed_seconds += seconds;
+    run.tx.send(samples).map_err(|_| ())?;
+    Ok(seconds)
+}
+
+fn cancel_failed_session(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let _gate = state.session_gate.lock().expect("session");
+    if *state.status.lock().expect("status") != AppStatus::Recording {
+        return;
+    }
+    let run = state.segment_run.lock().expect("segments").take();
+    let _ = state.recorder.lock().expect("recorder").stop_samples();
+    drop(_gate);
+    if let Some(run) = run {
+        let err = run.error.lock().expect("segment error").clone();
+        drop(run.tx);
+        let _ = run.worker.join();
+        if let Some(err) = err {
+            crate::notify::show("Dictator", &format!("Ошибка: {err}"));
+            *app.state::<AppState>()
+                .engine_error
+                .lock()
+                .expect("engine_error") = Some(err);
+        }
+    }
+    set_status(app, AppStatus::Idle);
+}
+
+fn finish_segments(
+    app: &AppHandle,
+    run: SegmentRun,
+    tail: Result<Vec<f32>, String>,
+    handed_seconds: f64,
+) {
+    let SegmentRun {
+        tx,
+        parts,
+        error,
+        worker,
+        ..
+    } = run;
+    let mut skip_tail = false;
+    match tail {
+        Ok(samples) => {
+            let duration = crate::wav::duration_seconds(&samples, crate::wav::SAMPLE_RATE);
+            if handed_seconds <= 0.0 && duration < MIN_UTTERANCE_SECONDS {
+                skip_tail = true;
+                crate::notify::show("Dictator", "Слишком короткая запись");
+            } else if !samples.is_empty() {
+                let _ = tx.send(samples);
+            }
+        }
+        Err(err) => {
+            *error.lock().expect("segment error") = Some(err);
+        }
+    }
+    drop(tx);
+    let _ = worker.join();
+    if skip_tail {
+        set_status(app, AppStatus::Idle);
+        return;
+    }
+    if let Some(err) = error.lock().expect("segment error").clone() {
+        crate::notify::show("Dictator", &format!("Ошибка: {err}"));
+        *app.state::<AppState>()
+            .engine_error
+            .lock()
+            .expect("engine_error") = Some(err);
+        set_status(app, AppStatus::Idle);
+        return;
+    }
+    let text = parts
+        .lock()
+        .expect("parts")
+        .join(" ")
+        .trim()
+        .to_string();
+    publish_transcript(app, text);
+    set_status(app, AppStatus::Idle);
+}
+
+fn resample_capture(raw: crate::recorder::RawCapture) -> Vec<f32> {
+    crate::wav::resample(&raw.samples, raw.capture_rate, crate::wav::SAMPLE_RATE)
+}
+
+fn transcribe_segment(app: &AppHandle, samples: &[f32]) -> Result<String, String> {
+    if crate::wav::duration_seconds(samples, crate::wav::SAMPLE_RATE) < MIN_UTTERANCE_SECONDS {
+        return Ok(String::new());
+    }
+    ensure_engine(app)?;
+    let state = app.state::<AppState>();
+    let mut slot = state.engine.lock().expect("engine");
+    let engine = slot.as_mut().ok_or("STT engine missing")?;
+    engine.transcribe_samples(samples, crate::wav::SAMPLE_RATE)
+}
+
+fn publish_transcript(app: &AppHandle, text: String) {
+    let settings = app
         .state::<AppState>()
         .settings
         .lock()
         .expect("settings")
-        .max_recording_seconds
-        .max(5.0);
-    thread::spawn(move || {
-        thread::sleep(Duration::from_secs_f64(limit));
-        let state = app.state::<AppState>();
-        if *state.record_gen.lock().expect("gen") != generation {
-            return;
-        }
-        if *state.status.lock().expect("status") != AppStatus::Recording {
-            return;
-        }
-        let _ = crate::pipeline::stop_and_transcribe(&app);
-    });
+        .clone();
+    let focus = app.state::<AppState>().focus.lock().expect("focus").clone();
+    if text.is_empty() {
+        crate::notify::show("Dictator", "Пустой результат распознавания");
+        return;
+    }
+    if let Err(err) =
+        crate::paste::deliver_text(app, &text, settings.paste_enabled, focus.as_ref())
+    {
+        crate::notify::show("Dictator", &format!("Ошибка: {err}"));
+        *app.state::<AppState>()
+            .engine_error
+            .lock()
+            .expect("engine_error") = Some(err);
+        return;
+    }
+    let preview = if text.chars().count() <= 80 {
+        text
+    } else {
+        format!("{}…", text.chars().take(77).collect::<String>())
+    };
+    if settings.paste_enabled {
+        crate::notify::show("Dictator", &crate::platform::paste_done_message(&preview));
+    } else {
+        crate::notify::show("Dictator", &format!("Скопировано: {preview}"));
+    }
 }
 
 fn set_status(app: &AppHandle, status: AppStatus) {

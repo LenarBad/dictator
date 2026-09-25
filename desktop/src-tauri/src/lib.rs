@@ -6,6 +6,7 @@ mod paste;
 mod pipeline;
 mod platform;
 mod recorder;
+mod segment;
 mod settings;
 mod speakers;
 mod stt;
@@ -60,6 +61,9 @@ pub(crate) struct AppState {
     pub engine_error: Mutex<Option<String>>,
     pub focus: Mutex<Option<crate::paste::Focus>>,
     pub record_gen: Mutex<u64>,
+    /// Serializes segment rotate with stop so a buffer is not dropped between them.
+    pub session_gate: Mutex<()>,
+    pub segment_run: Mutex<Option<pipeline::SegmentRun>>,
 }
 
 #[derive(Serialize)]
@@ -177,6 +181,8 @@ pub fn run() {
             engine_error: Mutex::new(None),
             focus: Mutex::new(None),
             record_gen: Mutex::new(0),
+            session_gate: Mutex::new(()),
+            segment_run: Mutex::new(None),
         })
         .setup(|app| {
             build_tray(app.handle())?;

@@ -23,12 +23,94 @@ enum RecCmd {
     Stop {
         reply: Sender<Result<std::path::PathBuf, String>>,
     },
+    /// Stop the microphone and return the open buffer without writing a file.
+    StopSamples {
+        reply: Sender<Result<RawCapture, String>>,
+    },
+    /// Hand off the open buffer and keep the microphone running.
+    TakeSegment {
+        reply: Sender<Result<RawCapture, String>>,
+    },
+    Snapshot {
+        reply: Sender<SegmentSnapshot>,
+    },
     IsRecording {
         reply: Sender<bool>,
     },
     Elapsed {
         reply: Sender<f64>,
     },
+}
+
+/// Mono host-rate samples already downmixed in the capture callback.
+pub struct RawCapture {
+    pub samples: Vec<f32>,
+    pub capture_rate: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SegmentSnapshot {
+    pub segment_seconds: f64,
+    pub silence_seconds: f64,
+}
+
+struct CaptureBuf {
+    samples: Vec<f32>,
+    silent_seconds: f64,
+    sample_rate: u32,
+}
+
+impl CaptureBuf {
+    fn new() -> Self {
+        Self {
+            samples: Vec::new(),
+            silent_seconds: 0.0,
+            sample_rate: SAMPLE_RATE,
+        }
+    }
+
+    fn reset(&mut self, sample_rate: u32) {
+        self.samples.clear();
+        self.silent_seconds = 0.0;
+        self.sample_rate = sample_rate.max(1);
+    }
+
+    fn snapshot(&self) -> SegmentSnapshot {
+        let rate = self.sample_rate.max(1);
+        SegmentSnapshot {
+            segment_seconds: self.samples.len() as f64 / f64::from(rate),
+            silence_seconds: self.silent_seconds,
+        }
+    }
+
+    fn take(&mut self) -> RawCapture {
+        let samples = std::mem::take(&mut self.samples);
+        self.silent_seconds = 0.0;
+        RawCapture {
+            samples,
+            capture_rate: self.sample_rate.max(1),
+        }
+    }
+
+    fn push_mono(&mut self, mono: &[f32]) {
+        if mono.is_empty() {
+            return;
+        }
+        let sum_sq: f64 = mono
+            .iter()
+            .map(|sample| {
+                let sample = f64::from(*sample);
+                sample * sample
+            })
+            .sum();
+        self.samples.extend_from_slice(mono);
+        let rate = self.sample_rate.max(1);
+        let segment_seconds = self.samples.len() as f64 / f64::from(rate);
+        let chunk_seconds = mono.len() as f64 / f64::from(rate);
+        let rms = (sum_sq / mono.len() as f64).sqrt();
+        self.silent_seconds =
+            crate::segment::next_silence(segment_seconds, chunk_seconds, rms, self.silent_seconds);
+    }
 }
 
 pub struct Recorder {
@@ -184,14 +266,39 @@ impl Recorder {
         rx.recv()
             .map_err(|_| "microphone thread exited".to_string())?
     }
+
+    pub fn stop_samples(&self) -> Result<RawCapture, String> {
+        let (reply, rx) = mpsc::channel();
+        self.tx
+            .send(RecCmd::StopSamples { reply })
+            .map_err(|_| "microphone thread exited".to_string())?;
+        rx.recv()
+            .map_err(|_| "microphone thread exited".to_string())?
+    }
+
+    pub fn take_segment(&self) -> Result<RawCapture, String> {
+        let (reply, rx) = mpsc::channel();
+        self.tx
+            .send(RecCmd::TakeSegment { reply })
+            .map_err(|_| "microphone thread exited".to_string())?;
+        rx.recv()
+            .map_err(|_| "microphone thread exited".to_string())?
+    }
+
+    pub fn segment_snapshot(&self) -> SegmentSnapshot {
+        let (reply, rx) = mpsc::channel();
+        if self.tx.send(RecCmd::Snapshot { reply }).is_err() {
+            return SegmentSnapshot::default();
+        }
+        rx.recv().unwrap_or_default()
+    }
 }
 
 struct Inner {
     stream: Option<Stream>,
-    samples: Arc<Mutex<Vec<f32>>>,
+    samples: Arc<Mutex<CaptureBuf>>,
     meter: Arc<Mutex<LevelMeter>>,
     capture_rate: u32,
-    channels: u16,
     started_at: Option<Instant>,
 }
 
@@ -204,10 +311,9 @@ impl Drop for Inner {
 fn recorder_loop(rx: mpsc::Receiver<RecCmd>, meter: Arc<Mutex<LevelMeter>>) {
     let mut inner = Inner {
         stream: None,
-        samples: Arc::new(Mutex::new(Vec::new())),
+        samples: Arc::new(Mutex::new(CaptureBuf::new())),
         meter,
         capture_rate: SAMPLE_RATE,
-        channels: 1,
         started_at: None,
     };
     while let Ok(cmd) = rx.recv() {
@@ -217,6 +323,20 @@ fn recorder_loop(rx: mpsc::Receiver<RecCmd>, meter: Arc<Mutex<LevelMeter>>) {
             }
             RecCmd::Stop { reply } => {
                 let _ = reply.send(stop_inner(&mut inner));
+            }
+            RecCmd::StopSamples { reply } => {
+                let _ = reply.send(stop_samples_inner(&mut inner));
+            }
+            RecCmd::TakeSegment { reply } => {
+                let _ = reply.send(take_segment_inner(&mut inner));
+            }
+            RecCmd::Snapshot { reply } => {
+                let snapshot = inner
+                    .samples
+                    .lock()
+                    .map(|buf| buf.snapshot())
+                    .unwrap_or_default();
+                let _ = reply.send(snapshot);
             }
             RecCmd::IsRecording { reply } => {
                 let _ = reply.send(inner.stream.is_some());
@@ -241,8 +361,11 @@ fn start_inner(inner: &mut Inner, device_name: Option<&str>) -> Result<(), Strin
         .default_input_config()
         .map_err(|err| format!("microphone config: {err}"))?;
     inner.capture_rate = config.sample_rate().0;
-    inner.channels = config.channels();
-    inner.samples.lock().expect("samples").clear();
+    inner
+        .samples
+        .lock()
+        .expect("samples")
+        .reset(inner.capture_rate);
     inner.meter.lock().expect("meter").reset(inner.capture_rate);
     let stream = build_stream(
         &device,
@@ -259,15 +382,26 @@ fn start_inner(inner: &mut Inner, device_name: Option<&str>) -> Result<(), Strin
 }
 
 fn stop_inner(inner: &mut Inner) -> Result<std::path::PathBuf, String> {
-    release_stream(inner);
-    let captured = {
-        let mut samples = inner.samples.lock().expect("samples");
-        std::mem::take(&mut *samples)
-    };
-    let prepared = wav::prepare_host_wav(&captured, inner.channels, inner.capture_rate);
+    let captured = stop_samples_inner(inner)?;
+    // The callback already downmixed to mono. Passing the device channel count
+    // would average adjacent samples a second time.
+    let prepared = wav::resample(&captured.samples, captured.capture_rate, SAMPLE_RATE);
     let path = unique_wav_path();
     wav::write_pcm16_wav(&path, &prepared, SAMPLE_RATE)?;
     Ok(path)
+}
+
+fn stop_samples_inner(inner: &mut Inner) -> Result<RawCapture, String> {
+    release_stream(inner);
+    inner.started_at = None;
+    Ok(inner.samples.lock().expect("samples").take())
+}
+
+fn take_segment_inner(inner: &mut Inner) -> Result<RawCapture, String> {
+    if inner.stream.is_none() {
+        return Err("recording is not in progress".into());
+    }
+    Ok(inner.samples.lock().expect("samples").take())
 }
 
 fn release_stream(inner: &mut Inner) {
@@ -487,7 +621,7 @@ fn resolve_input_device(name: Option<&str>) -> Result<cpal::Device, String> {
 fn build_stream(
     device: &cpal::Device,
     config: &SupportedStreamConfig,
-    sink: Arc<Mutex<Vec<f32>>>,
+    sink: Arc<Mutex<CaptureBuf>>,
     meter: Arc<Mutex<LevelMeter>>,
 ) -> Result<Stream, String> {
     let channels = config.channels();
@@ -527,14 +661,14 @@ fn build_stream(
 fn append_samples(
     input: &[f32],
     channels: u16,
-    sink: &Arc<Mutex<Vec<f32>>>,
+    sink: &Arc<Mutex<CaptureBuf>>,
     meter: &Arc<Mutex<LevelMeter>>,
 ) {
     if channels <= 1 {
         if let Ok(mut meter) = meter.lock() {
             meter.push(input);
         }
-        sink.lock().expect("samples").extend_from_slice(input);
+        sink.lock().expect("samples").push_mono(input);
         return;
     }
     let channels = channels as usize;
@@ -545,7 +679,7 @@ fn append_samples(
     if let Ok(mut meter) = meter.lock() {
         meter.push(&mono);
     }
-    sink.lock().expect("samples").extend_from_slice(&mono);
+    sink.lock().expect("samples").push_mono(&mono);
 }
 
 fn unique_wav_path() -> std::path::PathBuf {

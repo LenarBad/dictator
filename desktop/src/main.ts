@@ -5,6 +5,8 @@ import { comboFromKeyboardEvent, formatHotkey, modifierTokens } from "./format.t
 
 type AppStatus = "idle" | "recording" | "transcribing";
 
+let keptRecordingLimit = 180;
+
 type Settings = {
   hotkey: string;
   paste_enabled: boolean;
@@ -210,13 +212,12 @@ function fillForm(state: UiState) {
   const paste = document.querySelector<HTMLInputElement>("#paste_enabled");
   const preload = document.querySelector<HTMLInputElement>("#preload_model");
   const diarization = document.querySelector<HTMLInputElement>("#diarization_enabled");
-  const limit = document.querySelector<HTMLInputElement>("#max_recording_seconds");
   if (hotkey) hotkey.value = state.settings.hotkey;
   setText("#hotkey-display", formatHotkey(state.settings.hotkey));
   if (paste) paste.checked = state.settings.paste_enabled;
   if (preload) preload.checked = state.settings.preload_model;
   if (diarization) diarization.checked = state.settings.diarization_enabled;
-  if (limit) limit.value = String(state.settings.max_recording_seconds);
+  keptRecordingLimit = state.settings.max_recording_seconds;
   fillMicrophones(state);
   setText("#app-version", state.app_version);
   applyPermissions(state);
@@ -231,9 +232,6 @@ function readForm(): Settings {
   const diarization =
     document.querySelector<HTMLInputElement>("#diarization_enabled")?.checked ?? false;
   const mic = document.querySelector<HTMLSelectElement>("#microphone_name")?.value.trim() ?? "";
-  const limit = Number(
-    document.querySelector<HTMLInputElement>("#max_recording_seconds")?.value ?? "180",
-  );
   return {
     hotkey,
     paste_enabled: paste,
@@ -241,7 +239,7 @@ function readForm(): Settings {
     model_name: "v3_e2e_rnnt",
     preload_model: preload,
     diarization_enabled: diarization,
-    max_recording_seconds: Number.isFinite(limit) ? limit : 180,
+    max_recording_seconds: keptRecordingLimit,
   };
 }
 
@@ -358,11 +356,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     void persist();
   });
   document.querySelector("#settings-form")?.addEventListener("change", () => queueSave());
-  document.querySelector("#settings-form")?.addEventListener("input", (event) => {
-    const target = event.target as HTMLElement | null;
-    if (target?.id === "max_recording_seconds") queueSave();
-  });
-
   document.querySelector("#toggle")?.addEventListener("click", async () => {
     const status = await invoke<AppStatus>("toggle_recording");
     applyStatus(status, STATUS_LABEL[status]);

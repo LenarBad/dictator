@@ -17,6 +17,7 @@ pub struct Settings {
     /// Old settings files omit this field and stay off.
     #[serde(default)]
     pub diarization_enabled: bool,
+    /// Older settings files still contain this. The session cap is fixed.
     pub max_recording_seconds: f64,
 }
 
