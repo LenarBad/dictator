@@ -10,15 +10,23 @@ import kotlin.math.sqrt
 
 /**
  * 16 kHz mono PCM16 capture into float [-1, 1]. No WAV on disk.
- * Caps at [SttContract.MAX_SESSION_SECONDS]; caller should also stop on that signal.
+ *
+ * The microphone stays open. After [SttContract.SEGMENT_SECONDS] the current buffer is
+ * handed to [onSegment] on a pause, or forced a little later. The session itself stops
+ * only at [SttContract.MAX_SESSION_SECONDS] via [onSessionLimit].
  */
 class AudioRecorder(
     private val onLevel: (Float) -> Unit,
-    private val onMaxDuration: () -> Unit,
+    private val onSessionLimit: () -> Unit,
+    private val onSegment: (FloatArray) -> Unit,
+    private val onCompleteWindows: ((snapshot: FloatArray, readyCount: Int) -> Unit)? = null,
 ) {
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
     private val samples = ArrayList<Float>(SttContract.SAMPLE_RATE * 8)
+    private var announcedWindows = 0
+    private var sessionSamples = 0
+    private var silentSamples = 0
 
     @SuppressLint("MissingPermission")
     fun start() {
@@ -49,7 +57,7 @@ class AudioRecorder(
             throw IllegalStateException("AudioRecord init failed")
         }
 
-        val maxSamples = sampleRate * SttContract.MAX_SESSION_SECONDS
+        val segmentLimit = sampleRate * SttContract.SEGMENT_SECONDS
         thread =
             Thread({
                 Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
@@ -67,15 +75,31 @@ class AudioRecorder(
                                 sumSq += (f * f).toDouble()
                             }
                         }
-                        onLevel(sqrt(sumSq / read).toFloat().coerceIn(0f, 1f))
+                        val rms = sqrt(sumSq / read).toFloat().coerceIn(0f, 1f)
+                        onLevel(rms)
                         val size =
                             synchronized(samples) {
                                 samples.size
                             }
-                        if (size >= maxSamples) {
-                            running.set(false)
-                            onMaxDuration()
-                            break
+                        notifyCompleteWindows(size)
+                        if (size < segmentLimit || rms >= SttContract.SILENCE_RMS) {
+                            silentSamples = 0
+                        } else {
+                            silentSamples += read
+                        }
+                        when (SegmentGate.action(size, sessionSamples, silentSamples, sampleRate)) {
+                            SegmentGate.Action.STOP -> {
+                                running.set(false)
+                                onSessionLimit()
+                                break
+                            }
+                            SegmentGate.Action.ROTATE -> {
+                                val taken = takeSegment()
+                                sessionSamples += taken.size
+                                silentSamples = 0
+                                if (taken.isNotEmpty()) onSegment(taken)
+                            }
+                            SegmentGate.Action.CONTINUE -> Unit
                         }
                     }
                 } finally {
@@ -101,4 +125,25 @@ class AudioRecorder(
     }
 
     fun isRunning(): Boolean = running.get()
+
+    private fun takeSegment(): FloatArray {
+        return synchronized(samples) {
+            val out = samples.toFloatArray()
+            samples.clear()
+            announcedWindows = 0
+            out
+        }
+    }
+
+    private fun notifyCompleteWindows(size: Int) {
+        val listener = onCompleteWindows ?: return
+        val ready = Chunker.completeWindowCount(size, SttContract.SAMPLE_RATE)
+        if (ready <= announcedWindows) return
+        announcedWindows = ready
+        val snapshot =
+            synchronized(samples) {
+                samples.toFloatArray()
+            }
+        listener(snapshot, ready)
+    }
 }

@@ -114,6 +114,31 @@
             android:text="@string/setup_return_ime"
             android:textColor="@color/setup_text" />
 
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switchCloseSession"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:checked="true"
+            android:text="@string/setup_close_session"
+            android:textColor="@color/setup_text" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switchShowTranscript"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/setup_show_transcript"
+            android:textColor="@color/setup_text" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switchLiveChunks"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/setup_live_chunks"
+            android:textColor="@color/setup_text" />
+
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -132,5 +157,13 @@
             android:textSize="15sp"
             android:textStyle="bold"
             android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/txtVersion"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="28dp"
+            android:textColor="@color/setup_muted"
+            android:textSize="13sp" />
     </LinearLayout>
 </ScrollView>

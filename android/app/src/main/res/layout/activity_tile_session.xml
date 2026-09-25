@@ -35,6 +35,26 @@
         android:textColor="@color/dictator_text_muted"
         android:textSize="14sp" />
 
+    <ScrollView
+        android:id="@+id/transcriptScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="16dp"
+        android:layout_weight="1"
+        android:background="@color/dictator_surface"
+        android:fillViewport="true"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/txtTranscript"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/dictator_text"
+            android:textIsSelectable="true"
+            android:textSize="16sp" />
+    </ScrollView>
+
     <ProgressBar
         android:id="@+id/levelBar"
         style="?android:attr/progressBarStyleHorizontal"

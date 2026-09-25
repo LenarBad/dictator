@@ -9,13 +9,16 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.RemoteException
+import android.view.View
 import android.view.WindowManager
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import io.lenar.dictator.R
+import io.lenar.dictator.settings.DictatorPrefs
 import io.lenar.dictator.settings.SetupGate
 import io.lenar.dictator.stt.ISttCallback
 import io.lenar.dictator.stt.ISttService
@@ -38,10 +41,14 @@ class TileSessionActivity : AppCompatActivity() {
     private var foreground = false
 
     private lateinit var txtStatus: TextView
+    private lateinit var transcriptScroll: ScrollView
+    private lateinit var txtTranscript: TextView
     private lateinit var levelBar: ProgressBar
     private lateinit var btnStop: MaterialButton
     private lateinit var btnCollapse: MaterialButton
     private var detachable = false
+    private var review = false
+    private var showTranscript = false
 
     private val sttCallback =
         object : ISttCallback.Stub() {
@@ -52,6 +59,14 @@ class TileSessionActivity : AppCompatActivity() {
             override fun onLevel(level: Float) {
                 mainHandler.post {
                     levelBar.progress = (level * 100f).toInt().coerceIn(0, 100)
+                }
+            }
+
+            override fun onPartial(source: Int, text: String?) {
+                if (source != SttContract.SOURCE_TILE) return
+                mainHandler.post {
+                    if (finishing || review) return@post
+                    revealTranscript(text.orEmpty())
                 }
             }
 
@@ -72,7 +87,14 @@ class TileSessionActivity : AppCompatActivity() {
                             Toast.LENGTH_SHORT,
                         ).show()
                     }
-                    finishSession()
+                    if (showTranscript || transcriptScroll.visibility == View.VISIBLE) {
+                        revealTranscript(body)
+                    }
+                    if (DictatorPrefs.closeSessionImmediately(this@TileSessionActivity)) {
+                        finishSession()
+                    } else {
+                        enterReview()
+                    }
                 }
             }
 
@@ -141,7 +163,7 @@ class TileSessionActivity : AppCompatActivity() {
         val api = stt ?: return
         started = true
         try {
-            api.start(SttContract.SOURCE_TILE)
+            api.start(SttContract.SOURCE_TILE, DictatorPrefs.liveChunks(this))
         } catch (_: RemoteException) {
             Toast.makeText(this, R.string.ime_stt_unavailable, Toast.LENGTH_SHORT).show()
             finishSession()
@@ -154,9 +176,15 @@ class TileSessionActivity : AppCompatActivity() {
         setContentView(R.layout.activity_tile_session)
 
         txtStatus = findViewById(R.id.txtStatus)
+        transcriptScroll = findViewById(R.id.transcriptScroll)
+        txtTranscript = findViewById(R.id.txtTranscript)
         levelBar = findViewById(R.id.levelBar)
         btnStop = findViewById(R.id.btnStop)
         btnCollapse = findViewById(R.id.btnCollapse)
+        showTranscript = DictatorPrefs.showTranscript(this)
+        if (DictatorPrefs.liveChunks(this)) {
+            transcriptScroll.visibility = View.VISIBLE
+        }
         btnStop.setOnClickListener { requestStop() }
         btnCollapse.setOnClickListener { collapse() }
 
@@ -183,7 +211,20 @@ class TileSessionActivity : AppCompatActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        requestStop()
+        if (review) finishSession() else requestStop()
+    }
+
+    private fun revealTranscript(text: String) {
+        transcriptScroll.visibility = View.VISIBLE
+        txtTranscript.text = text
+    }
+
+    private fun enterReview() {
+        review = true
+        txtStatus.setText(R.string.tile_session_done)
+        btnStop.isEnabled = true
+        btnStop.setText(R.string.tile_session_close)
+        btnCollapse.isEnabled = true
     }
 
     private fun collapse() {
@@ -193,6 +234,10 @@ class TileSessionActivity : AppCompatActivity() {
     }
 
     private fun requestStop() {
+        if (review) {
+            finishSession()
+            return
+        }
         btnStop.isEnabled = false
         btnCollapse.isEnabled = false
         txtStatus.setText(R.string.tile_session_transcribing)
