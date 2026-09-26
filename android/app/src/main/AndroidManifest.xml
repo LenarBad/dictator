@@ -36,8 +36,10 @@
                 android:resource="@xml/method" />
         </service>
 
+        <!-- Recreating this activity calls start() again, and SttService treats that as stop. -->
         <activity
             android:name=".tile.TileSessionActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTask"
