@@ -31,6 +31,11 @@ import io.lenar.dictator.stt.SttService
  * Android 14+ blocks microphone foreground services from a pure [TileService]
  * click (while-in-use permission). A real activity puts the app in foreground
  * so [:stt] can record.
+ *
+ * Rotation is declared in the manifest so this window is not recreated.
+ * A new instance would call start(), and [SttService] treats a second start
+ * as stop. If the system still recreates the window, [syncWithService] attaches
+ * to the session already running in [:stt] instead of starting another one.
  */
 class TileSessionActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -119,7 +124,7 @@ class TileSessionActivity : AppCompatActivity() {
                 try {
                     api.register(sttCallback)
                     if (foreground) {
-                        beginRecording()
+                        syncWithService()
                     }
                 } catch (_: RemoteException) {
                     Toast.makeText(
@@ -147,7 +152,7 @@ class TileSessionActivity : AppCompatActivity() {
             if (::btnCollapse.isInitialized) {
                 btnCollapse.isEnabled = btnStop.isEnabled
             }
-            if (bound) beginRecording()
+            if (bound) syncWithService()
         } catch (err: Exception) {
             Toast.makeText(
                 this,
@@ -158,12 +163,21 @@ class TileSessionActivity : AppCompatActivity() {
         }
     }
 
-    private fun beginRecording() {
+    private fun syncWithService() {
         if (started || finishing) return
         val api = stt ?: return
-        started = true
         try {
-            api.start(SttContract.SOURCE_TILE, DictatorPrefs.liveChunks(this))
+            when (tileSessionLaunch(api.status(), review)) {
+                TileSessionLaunch.Attach -> {
+                    started = true
+                    applyStatus(api.status())
+                }
+                TileSessionLaunch.RestoreReview -> enterReview()
+                TileSessionLaunch.Start -> {
+                    started = true
+                    api.start(SttContract.SOURCE_TILE, DictatorPrefs.liveChunks(this))
+                }
+            }
         } catch (_: RemoteException) {
             Toast.makeText(this, R.string.ime_stt_unavailable, Toast.LENGTH_SHORT).show()
             finishSession()
@@ -187,6 +201,7 @@ class TileSessionActivity : AppCompatActivity() {
         }
         btnStop.setOnClickListener { requestStop() }
         btnCollapse.setOnClickListener { collapse() }
+        restoreSession(savedInstanceState)
 
         if (!SetupGate.isVoiceReady(this)) {
             Toast.makeText(this, R.string.tile_setup_required, Toast.LENGTH_SHORT).show()
@@ -195,6 +210,21 @@ class TileSessionActivity : AppCompatActivity() {
         }
 
         bindService(Intent(this, SttService::class.java), connection, Context.BIND_AUTO_CREATE)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_REVIEW, review)
+        if (::txtTranscript.isInitialized) {
+            outState.putString(STATE_TRANSCRIPT, txtTranscript.text?.toString().orEmpty())
+        }
+    }
+
+    private fun restoreSession(savedInstanceState: Bundle?) {
+        val state = savedInstanceState ?: return
+        val transcript = state.getString(STATE_TRANSCRIPT).orEmpty()
+        if (transcript.isNotEmpty()) revealTranscript(transcript)
+        if (state.getBoolean(STATE_REVIEW)) enterReview()
     }
 
     override fun onDestroy() {
@@ -268,5 +298,10 @@ class TileSessionActivity : AppCompatActivity() {
         if (finishing) return
         finishing = true
         finish()
+    }
+
+    companion object {
+        private const val STATE_REVIEW = "review"
+        private const val STATE_TRANSCRIPT = "transcript"
     }
 }
