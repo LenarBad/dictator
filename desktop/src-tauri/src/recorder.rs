@@ -31,6 +31,12 @@ enum RecCmd {
     TakeSegment {
         reply: Sender<Result<RawCapture, String>>,
     },
+    /// Hand off the open buffer but leave `tail_seconds` at the start of the
+    /// next chunk. The second value is how much tail actually stayed.
+    TakeSegmentKeepingTail {
+        tail_seconds: f64,
+        reply: Sender<Result<(RawCapture, f64), String>>,
+    },
     Snapshot {
         reply: Sender<SegmentSnapshot>,
     },
@@ -90,6 +96,41 @@ impl CaptureBuf {
             samples,
             capture_rate: self.sample_rate.max(1),
         }
+    }
+
+    /// Clone the buffer out and leave the last `tail_seconds` in place.
+    /// A buffer shorter than the tail is taken whole, with no leftover.
+    fn take_keeping_tail(&mut self, tail_seconds: f64) -> (RawCapture, f64) {
+        let rate = self.sample_rate.max(1);
+        let taken = self.samples.clone();
+        let duration = taken.len() as f64 / f64::from(rate);
+        let tail = if tail_seconds.is_finite() && tail_seconds > 0.0 {
+            tail_seconds.min(duration)
+        } else {
+            0.0
+        };
+        let tail_n = (tail * f64::from(rate)).round() as usize;
+        if tail_n == 0 || tail_n >= taken.len() {
+            self.samples.clear();
+            self.silent_seconds = 0.0;
+            return (
+                RawCapture {
+                    samples: taken,
+                    capture_rate: rate,
+                },
+                0.0,
+            );
+        }
+        let start = taken.len() - tail_n;
+        self.samples = taken[start..].to_vec();
+        self.silent_seconds = 0.0;
+        (
+            RawCapture {
+                samples: taken,
+                capture_rate: rate,
+            },
+            tail_n as f64 / f64::from(rate),
+        )
     }
 
     fn push_mono(&mut self, mono: &[f32]) {
@@ -285,6 +326,23 @@ impl Recorder {
             .map_err(|_| "microphone thread exited".to_string())?
     }
 
+    /// Like `take_segment`, but the last `tail_seconds` stay in the open buffer.
+    /// Returns that leftover duration (0 when the buffer was shorter than the tail).
+    pub fn take_segment_keeping_tail(
+        &self,
+        tail_seconds: f64,
+    ) -> Result<(RawCapture, f64), String> {
+        let (reply, rx) = mpsc::channel();
+        self.tx
+            .send(RecCmd::TakeSegmentKeepingTail {
+                tail_seconds,
+                reply,
+            })
+            .map_err(|_| "microphone thread exited".to_string())?;
+        rx.recv()
+            .map_err(|_| "microphone thread exited".to_string())?
+    }
+
     pub fn segment_snapshot(&self) -> SegmentSnapshot {
         let (reply, rx) = mpsc::channel();
         if self.tx.send(RecCmd::Snapshot { reply }).is_err() {
@@ -329,6 +387,12 @@ fn recorder_loop(rx: mpsc::Receiver<RecCmd>, meter: Arc<Mutex<LevelMeter>>) {
             }
             RecCmd::TakeSegment { reply } => {
                 let _ = reply.send(take_segment_inner(&mut inner));
+            }
+            RecCmd::TakeSegmentKeepingTail {
+                tail_seconds,
+                reply,
+            } => {
+                let _ = reply.send(take_segment_keeping_tail_inner(&mut inner, tail_seconds));
             }
             RecCmd::Snapshot { reply } => {
                 let snapshot = inner
@@ -402,6 +466,20 @@ fn take_segment_inner(inner: &mut Inner) -> Result<RawCapture, String> {
         return Err("recording is not in progress".into());
     }
     Ok(inner.samples.lock().expect("samples").take())
+}
+
+fn take_segment_keeping_tail_inner(
+    inner: &mut Inner,
+    tail_seconds: f64,
+) -> Result<(RawCapture, f64), String> {
+    if inner.stream.is_none() {
+        return Err("recording is not in progress".into());
+    }
+    Ok(inner
+        .samples
+        .lock()
+        .expect("samples")
+        .take_keeping_tail(tail_seconds))
 }
 
 fn release_stream(inner: &mut Inner) {

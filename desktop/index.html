@@ -71,6 +71,19 @@
                 <span class="knob"></span>
               </label>
             </div>
+            <div class="row mic">
+              <div class="row-copy">
+                <label class="row-title" for="microphone_name">Микрофон</label>
+                <span class="hint" id="mic-hint" hidden></span>
+              </div>
+              <select id="microphone_name"></select>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h2>Диаризация</h2>
+          <div class="group">
             <div class="row">
               <div class="row-copy">
                 <label class="row-title" for="diarization_enabled">Разделять говорящих</label>
@@ -81,12 +94,26 @@
                 <span class="knob"></span>
               </label>
             </div>
-            <div class="row mic">
+            <div class="row speakers">
               <div class="row-copy">
-                <label class="row-title" for="microphone_name">Микрофон</label>
-                <span class="hint" id="mic-hint" hidden></span>
+                <label class="row-title" for="diarization_speakers">Спикеров</label>
+                <span class="hint">Сколько человек будет в записи</span>
               </div>
-              <select id="microphone_name"></select>
+              <select id="diarization_speakers">
+                <option value="-1">Авто</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+              </select>
+            </div>
+            <div class="row">
+              <div class="row-copy">
+                <label class="row-title" for="diarization_chunked">По ходу записи</label>
+                <span class="hint">Эксперимент. Разбирает диалог кусками, пока идёт запись</span>
+              </div>
+              <label class="switch">
+                <input id="diarization_chunked" type="checkbox" />
+                <span class="knob"></span>
+              </label>
             </div>
           </div>
         </section>

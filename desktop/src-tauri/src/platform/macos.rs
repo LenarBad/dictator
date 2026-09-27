@@ -184,6 +184,11 @@ pub fn insert_or_paste(text: &str, target: Option<&FocusTarget>) -> Result<Strin
         log.push_str("no focus target captured at recording start\n");
     }
 
+    // The stop hotkey is still held when a chunked session finishes quickly.
+    // Cmd+V posted on top of Ctrl+Shift does not paste.
+    let released = wait_until_modifiers_released();
+    log.push_str(&format!("modifiers_released={released}\n"));
+
     // One path for every app: clipboard + Cmd+V. Writing AXSelectedText
     // duplicated text in Telegram and other native fields.
     match paste_command_v() {
@@ -421,8 +426,13 @@ fn configure_panel(window: &WebviewWindow) {
 
 const KEY_V: u16 = 9; // kVK_ANSI_V
 const KEY_COMMAND: u16 = 0x37; // kVK_Command
+const FLAG_SHIFT: u64 = 0x0002_0000;
+const FLAG_CONTROL: u64 = 0x0004_0000;
+const FLAG_ALTERNATE: u64 = 0x0008_0000;
 const FLAG_COMMAND: u64 = 0x0010_0000; // kCGEventFlagMaskCommand
+const MODIFIER_MASK: u64 = FLAG_SHIFT | FLAG_CONTROL | FLAG_ALTERNATE | FLAG_COMMAND;
 const HID_TAP: u32 = 0; // kCGHIDEventTap
+const HID_SYSTEM_STATE: u32 = 1; // kCGEventSourceStateHIDSystemState
 
 type CGEventRef = *mut std::ffi::c_void;
 type CGEventSourceRef = *mut std::ffi::c_void;
@@ -436,6 +446,21 @@ extern "C" {
     ) -> CGEventRef;
     fn CGEventSetFlags(event: CGEventRef, flags: u64);
     fn CGEventPost(tap: u32, event: CGEventRef);
+    fn CGEventSourceFlagsState(state_id: u32) -> u64;
+}
+
+/// Hotkey stop arrives on key-down, so Ctrl/Shift can still be down when the
+/// transcript is ready. Wait until they are up, otherwise the target app sees
+/// Ctrl+Shift+Cmd+V and does not paste.
+fn wait_until_modifiers_released() -> bool {
+    for _ in 0..40 {
+        let flags = unsafe { CGEventSourceFlagsState(HID_SYSTEM_STATE) };
+        if flags & MODIFIER_MASK == 0 {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    false
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]

@@ -17,6 +17,15 @@ pub struct Settings {
     /// Old settings files omit this field and stay off.
     #[serde(default)]
     pub diarization_enabled: bool,
+    /// Speakers to look for in the next recording: 2, 3, or -1 (automatic).
+    /// Anything else is automatic. Ignored while `diarization_enabled` is false.
+    #[serde(default = "default_diarization_speakers")]
+    pub diarization_speakers: i32,
+    /// Experimental: diarize and transcribe each rotated chunk during the
+    /// session, then cluster voice prints once at stop. Off unless the field
+    /// is present. Ignored while `diarization_enabled` is false.
+    #[serde(default)]
+    pub diarization_chunked: bool,
     /// Older settings files still contain this. The session cap is fixed.
     pub max_recording_seconds: f64,
 }
@@ -30,6 +39,8 @@ impl Default for Settings {
             model_name: DEFAULT_MODEL.to_string(),
             preload_model: true,
             diarization_enabled: false,
+            diarization_speakers: default_diarization_speakers(),
+            diarization_chunked: false,
             max_recording_seconds: 180.0,
         }
     }
@@ -52,10 +63,23 @@ impl Settings {
                 if is_macos_conflict_hotkey(&settings.hotkey) {
                     settings.hotkey = DEFAULT_HOTKEY.to_string();
                 }
+                settings.normalize();
                 settings
             }
             Err(_) => Self::default(),
         }
+    }
+
+    /// `2` and `3` ask sherpa for that many speakers. Every other value is automatic.
+    pub fn speaker_clusters(&self) -> i32 {
+        match self.diarization_speakers {
+            2 | 3 => self.diarization_speakers,
+            _ => -1,
+        }
+    }
+
+    pub fn normalize(&mut self) {
+        self.diarization_speakers = self.speaker_clusters();
     }
 
     pub fn save(&self) -> Result<PathBuf, String> {
@@ -106,10 +130,28 @@ mod tests {
         }"#;
         let settings: Settings = serde_json::from_str(raw).expect("settings");
         assert!(!settings.diarization_enabled);
+        assert_eq!(settings.diarization_speakers, -1);
+        assert!(!settings.diarization_chunked);
         assert_eq!(settings.hotkey, "ctrl+alt+d");
         assert!(!settings.paste_enabled);
         assert_eq!(settings.max_recording_seconds, 90.0);
     }
+
+    #[test]
+    fn speaker_count_keeps_only_two_or_three() {
+        let mut settings = Settings::default();
+        settings.diarization_speakers = 4;
+        settings.normalize();
+        assert_eq!(settings.speaker_clusters(), -1);
+        settings.diarization_speakers = 2;
+        assert_eq!(settings.speaker_clusters(), 2);
+        settings.diarization_speakers = 3;
+        assert_eq!(settings.speaker_clusters(), 3);
+    }
+}
+
+fn default_diarization_speakers() -> i32 {
+    -1
 }
 
 pub fn is_macos_conflict_hotkey(combo: &str) -> bool {

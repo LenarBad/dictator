@@ -24,6 +24,7 @@ pub fn action(
     session_seconds: f64,
     silence_seconds: f64,
     diarize: bool,
+    chunked: bool,
 ) -> Action {
     if !segment_seconds.is_finite()
         || segment_seconds < 0.0
@@ -35,7 +36,8 @@ pub fn action(
     if session_seconds + segment_seconds >= MAX_SESSION_SECONDS {
         return Action::Stop;
     }
-    if diarize {
+    // Chunked diarization rotates on the same pauses as plain dictation.
+    if diarize && !chunked {
         return Action::Continue;
     }
     if segment_seconds >= SEGMENT_SECONDS + SEGMENT_FORCE_EXTRA_SECONDS {
@@ -87,7 +89,7 @@ mod tests {
     #[test]
     fn keeps_recording_before_the_segment_mark() {
         assert_eq!(
-            action(SEGMENT_SECONDS - 0.1, 0.0, 5.0, false),
+            action(SEGMENT_SECONDS - 0.1, 0.0, 5.0, false, false),
             Action::Continue
         );
     }
@@ -95,11 +97,11 @@ mod tests {
     #[test]
     fn rotates_on_pause_after_three_minutes() {
         assert_eq!(
-            action(SEGMENT_SECONDS, 0.0, SILENCE_SECONDS - 0.01, false),
+            action(SEGMENT_SECONDS, 0.0, SILENCE_SECONDS - 0.01, false, false),
             Action::Continue
         );
         assert_eq!(
-            action(SEGMENT_SECONDS, 0.0, SILENCE_SECONDS, false),
+            action(SEGMENT_SECONDS, 0.0, SILENCE_SECONDS, false, false),
             Action::Rotate
         );
     }
@@ -107,23 +109,31 @@ mod tests {
     #[test]
     fn cuts_when_no_pause_arrives() {
         let force = SEGMENT_SECONDS + SEGMENT_FORCE_EXTRA_SECONDS;
-        assert_eq!(action(force, 0.0, 0.0, false), Action::Rotate);
+        assert_eq!(action(force, 0.0, 0.0, false, false), Action::Rotate);
     }
 
     #[test]
     fn session_cap_stops_instead_of_rotating() {
         let session = MAX_SESSION_SECONDS - 10.0;
-        assert_eq!(action(10.0, session, 0.0, false), Action::Stop);
-        assert_eq!(action(10.0, session, 0.0, true), Action::Stop);
+        assert_eq!(action(10.0, session, 0.0, false, false), Action::Stop);
+        assert_eq!(action(10.0, session, 0.0, true, false), Action::Stop);
+        assert_eq!(action(10.0, session, 0.0, true, true), Action::Stop);
     }
 
     #[test]
     fn diarization_holds_the_buffer_until_the_hour() {
         let force = SEGMENT_SECONDS + SEGMENT_FORCE_EXTRA_SECONDS;
-        assert_eq!(action(force, 0.0, SILENCE_SECONDS, true), Action::Continue);
         assert_eq!(
-            action(1.0, MAX_SESSION_SECONDS - 1.0, 0.0, true),
+            action(force, 0.0, SILENCE_SECONDS, true, false),
+            Action::Continue
+        );
+        assert_eq!(
+            action(1.0, MAX_SESSION_SECONDS - 1.0, 0.0, true, false),
             Action::Stop
+        );
+        assert_eq!(
+            action(force, 0.0, SILENCE_SECONDS, true, true),
+            Action::Rotate
         );
     }
 

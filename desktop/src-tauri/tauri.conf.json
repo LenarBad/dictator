@@ -16,7 +16,7 @@
         "label": "settings",
         "title": "Dictator",
         "width": 420,
-        "height": 620,
+        "height": 680,
         "minWidth": 380,
         "minHeight": 440,
         "create": false,

@@ -1,3 +1,4 @@
+mod chunk_diarize;
 mod diarize;
 mod hotkey;
 mod hud;
@@ -64,6 +65,7 @@ pub(crate) struct AppState {
     /// Serializes segment rotate with stop so a buffer is not dropped between them.
     pub session_gate: Mutex<()>,
     pub segment_run: Mutex<Option<pipeline::SegmentRun>>,
+    pub chunk_run: Mutex<Option<pipeline::ChunkRun>>,
 }
 
 #[derive(Serialize)]
@@ -123,6 +125,7 @@ fn save_settings(app: AppHandle, settings: Settings) -> Result<Settings, String>
         );
     }
     next.model_name = crate::settings::DEFAULT_MODEL.to_string();
+    next.normalize();
     if let Err(err) = register_current_hotkey(&app, &next.hotkey) {
         restore_saved_hotkey(&app);
         return Err(err);
@@ -183,6 +186,7 @@ pub fn run() {
             record_gen: Mutex::new(0),
             session_gate: Mutex::new(()),
             segment_run: Mutex::new(None),
+            chunk_run: Mutex::new(None),
         })
         .setup(|app| {
             build_tray(app.handle())?;

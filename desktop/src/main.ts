@@ -14,6 +14,8 @@ type Settings = {
   model_name: string;
   preload_model: boolean;
   diarization_enabled: boolean;
+  diarization_speakers: number;
+  diarization_chunked: boolean;
   max_recording_seconds: number;
 };
 
@@ -212,11 +214,19 @@ function fillForm(state: UiState) {
   const paste = document.querySelector<HTMLInputElement>("#paste_enabled");
   const preload = document.querySelector<HTMLInputElement>("#preload_model");
   const diarization = document.querySelector<HTMLInputElement>("#diarization_enabled");
+  const speakers = document.querySelector<HTMLSelectElement>("#diarization_speakers");
+  const chunked = document.querySelector<HTMLInputElement>("#diarization_chunked");
   if (hotkey) hotkey.value = state.settings.hotkey;
   setText("#hotkey-display", formatHotkey(state.settings.hotkey));
   if (paste) paste.checked = state.settings.paste_enabled;
   if (preload) preload.checked = state.settings.preload_model;
   if (diarization) diarization.checked = state.settings.diarization_enabled;
+  if (speakers) {
+    const count = state.settings.diarization_speakers;
+    speakers.value = count === 2 || count === 3 ? String(count) : "-1";
+  }
+  if (chunked) chunked.checked = state.settings.diarization_chunked;
+  syncDiarizationOptions();
   keptRecordingLimit = state.settings.max_recording_seconds;
   fillMicrophones(state);
   setText("#app-version", state.app_version);
@@ -231,6 +241,12 @@ function readForm(): Settings {
   const preload = document.querySelector<HTMLInputElement>("#preload_model")?.checked ?? true;
   const diarization =
     document.querySelector<HTMLInputElement>("#diarization_enabled")?.checked ?? false;
+  const speakersRaw = Number(
+    document.querySelector<HTMLSelectElement>("#diarization_speakers")?.value,
+  );
+  const speakers = speakersRaw === 2 || speakersRaw === 3 ? speakersRaw : -1;
+  const chunked =
+    document.querySelector<HTMLInputElement>("#diarization_chunked")?.checked ?? false;
   const mic = document.querySelector<HTMLSelectElement>("#microphone_name")?.value.trim() ?? "";
   return {
     hotkey,
@@ -239,6 +255,8 @@ function readForm(): Settings {
     model_name: "v3_e2e_rnnt",
     preload_model: preload,
     diarization_enabled: diarization,
+    diarization_speakers: speakers,
+    diarization_chunked: chunked,
     max_recording_seconds: keptRecordingLimit,
   };
 }
@@ -254,6 +272,17 @@ function showFormStatus(message: string, error = false) {
     toastTimer = window.setTimeout(() => {
       el.hidden = true;
     }, 1600);
+  }
+}
+
+function syncDiarizationOptions() {
+  const enabled =
+    document.querySelector<HTMLInputElement>("#diarization_enabled")?.checked ?? false;
+  for (const id of ["#diarization_speakers", "#diarization_chunked"]) {
+    const control = document.querySelector<HTMLInputElement | HTMLSelectElement>(id);
+    if (!control) continue;
+    control.disabled = !enabled;
+    control.closest(".row")?.classList.toggle("muted", !enabled);
   }
 }
 
@@ -328,6 +357,8 @@ function previewState(): UiState {
       model_name: "v3_e2e_rnnt",
       preload_model: true,
       diarization_enabled: false,
+      diarization_speakers: -1,
+      diarization_chunked: false,
       max_recording_seconds: 180,
     },
     recording_wired: true,
@@ -355,7 +386,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     event.preventDefault();
     void persist();
   });
-  document.querySelector("#settings-form")?.addEventListener("change", () => queueSave());
+  document.querySelector("#settings-form")?.addEventListener("change", () => {
+    syncDiarizationOptions();
+    queueSave();
+  });
   document.querySelector("#toggle")?.addEventListener("click", async () => {
     const status = await invoke<AppStatus>("toggle_recording");
     applyStatus(status, STATUS_LABEL[status]);

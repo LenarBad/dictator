@@ -23,6 +23,8 @@ const EMBED_MAX_SECONDS: f64 = 8.0;
 pub struct Diarizer {
     stub: bool,
     model_dir: PathBuf,
+    /// Cluster count last applied to `inner`. `-1` is sherpa's automatic threshold.
+    clusters: i32,
     inner: Option<OfflineSpeakerDiarization>,
     embedder: Option<SpeakerEmbeddingExtractor>,
 }
@@ -35,6 +37,7 @@ impl Diarizer {
         Ok(Self {
             stub: false,
             model_dir: resolve_model_dir()?,
+            clusters: -1,
             inner: None,
             embedder: None,
         })
@@ -44,6 +47,7 @@ impl Diarizer {
         Self {
             stub: true,
             model_dir: PathBuf::new(),
+            clusters: -1,
             inner: None,
             embedder: None,
         }
@@ -53,11 +57,18 @@ impl Diarizer {
         if self.stub {
             return Ok(());
         }
-        self.ensure().map(|_| ())
+        self.ensure(-1).map(|_| ())
     }
 
     /// Speaker ids are sherpa's raw indexes (0-based). Callers renumber for display.
-    pub fn process(&mut self, samples: &[f32], sample_rate: u32) -> Result<Vec<Segment>, String> {
+    /// `clusters` is 2, 3, or -1 (automatic). A chunk of a longer session passes -1
+    /// so one voice in that chunk is not split just to fill a quota.
+    pub fn process(
+        &mut self,
+        samples: &[f32],
+        sample_rate: u32,
+        clusters: i32,
+    ) -> Result<Vec<Segment>, String> {
         if samples.is_empty() || sample_rate == 0 {
             return Ok(Vec::new());
         }
@@ -69,7 +80,7 @@ impl Diarizer {
             }]);
         }
 
-        let diarizer = self.ensure()?;
+        let diarizer = self.ensure(clusters)?;
         let expected = diarizer.sample_rate();
         let audio = if expected > 0 && expected as u32 != sample_rate {
             wav::resample(samples, sample_rate, expected as u32)
@@ -120,12 +131,47 @@ impl Diarizer {
         )
     }
 
-    fn ensure(&mut self) -> Result<&OfflineSpeakerDiarization, String> {
+    /// One print per speaker id, from that speaker's longest turn.
+    /// The stub uses a fixed vector per id so the same stub speaker joins across chunks.
+    pub fn speaker_embeddings(
+        &mut self,
+        samples: &[f32],
+        sample_rate: u32,
+        segments: &[Segment],
+    ) -> Vec<(i32, Vec<f32>)> {
+        let mut speakers: Vec<i32> = segments.iter().map(|segment| segment.speaker).collect();
+        speakers.sort_unstable();
+        speakers.dedup();
+        if self.stub {
+            return speakers
+                .into_iter()
+                .map(|id| (id, vec![1.0, id as f32]))
+                .collect();
+        }
+        if samples.is_empty() || sample_rate == 0 {
+            return Vec::new();
+        }
+        let Ok(embedder) = self.ensure_embedder() else {
+            return Vec::new();
+        };
+        speaker_prints(embedder, samples, sample_rate, segments)
+    }
+
+    fn ensure(&mut self, clusters: i32) -> Result<&OfflineSpeakerDiarization, String> {
         if self.stub {
             return Err("stub diarizer has no model".into());
         }
+        let clusters = match clusters {
+            2 | 3 => clusters,
+            _ => -1,
+        };
         if self.inner.is_none() {
-            self.inner = Some(load_diarizer(&self.model_dir)?);
+            self.inner = Some(load_diarizer(&self.model_dir, clusters)?);
+            self.clusters = clusters;
+        } else if self.clusters != clusters {
+            let config = diarizer_config(&self.model_dir, clusters)?;
+            self.inner.as_ref().expect("diarizer").set_config(&config);
+            self.clusters = clusters;
         }
         Ok(self.inner.as_ref().expect("diarizer"))
     }
@@ -207,7 +253,10 @@ fn embed(
     embedder.compute(&stream)
 }
 
-fn load_diarizer(model_dir: &Path) -> Result<OfflineSpeakerDiarization, String> {
+fn diarizer_config(
+    model_dir: &Path,
+    clusters: i32,
+) -> Result<OfflineSpeakerDiarizationConfig, String> {
     let segmentation = model_dir.join("segmentation.int8.onnx");
     let embedding = model_dir.join("embedding.onnx");
     for path in [&segmentation, &embedding] {
@@ -215,8 +264,12 @@ fn load_diarizer(model_dir: &Path) -> Result<OfflineSpeakerDiarization, String> 
             return Err(missing_models());
         }
     }
+    let clusters = match clusters {
+        2 | 3 => clusters,
+        _ => -1,
+    };
 
-    let config = OfflineSpeakerDiarizationConfig {
+    Ok(OfflineSpeakerDiarizationConfig {
         segmentation: OfflineSpeakerSegmentationModelConfig {
             pyannote: OfflineSpeakerSegmentationPyannoteModelConfig {
                 model: Some(segmentation.to_string_lossy().into_owned()),
@@ -233,7 +286,8 @@ fn load_diarizer(model_dir: &Path) -> Result<OfflineSpeakerDiarization, String> 
             provider: Some("cpu".into()),
         },
         clustering: FastClusteringConfig {
-            num_clusters: -1,
+            // -1 follows the threshold. 2 or 3 ask for that many speakers.
+            num_clusters: clusters,
             // Sherpa default. 0.4 split one voice across pauses into several speakers.
             threshold: 0.5,
             compute_confidence: false,
@@ -242,8 +296,11 @@ fn load_diarizer(model_dir: &Path) -> Result<OfflineSpeakerDiarization, String> 
         // Sherpa's 0.5 off-gap glued a fast dialogue into one speaker.
         min_duration_on: 0.2,
         min_duration_off: 0.15,
-    };
+    })
+}
 
+fn load_diarizer(model_dir: &Path, clusters: i32) -> Result<OfflineSpeakerDiarization, String> {
+    let config = diarizer_config(model_dir, clusters)?;
     OfflineSpeakerDiarization::create(&config).ok_or_else(|| {
         format!(
             "Не удалось загрузить разделение говорящих из {}",
@@ -308,7 +365,7 @@ mod tests {
     fn stub_covers_the_whole_clip() {
         let mut diarizer = Diarizer::stub();
         let samples = vec![0.0_f32; 8_000];
-        let segments = diarizer.process(&samples, 16_000).expect("process");
+        let segments = diarizer.process(&samples, 16_000, -1).expect("process");
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].speaker, 0);
         assert!(segments[0].start.abs() < 1e-6);
@@ -327,7 +384,7 @@ mod tests {
         }
         let (samples, rate) = wav::read_pcm16_wav(&wav).expect("wav");
         let mut diarizer = Diarizer::new().expect("diarizer");
-        let segments = diarizer.process(&samples, rate).expect("process");
+        let segments = diarizer.process(&samples, rate, 2).expect("process");
         assert!(!segments.is_empty(), "diarization API returned no segments");
     }
 }
