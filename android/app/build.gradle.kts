@@ -19,8 +19,8 @@ android {
         applicationId = "io.lenar.dictator"
         minSdk = 29
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.2.0"
+        versionCode = 9
+        versionName = "0.2.1"
     }
 
     signingConfigs {
